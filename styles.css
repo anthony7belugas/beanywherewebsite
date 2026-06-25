@@ -1,0 +1,159 @@
+/* BeAnywhere site — mirrors the app's "golden-hour film" identity (src/lib/theme.ts).
+   Amber (#E8A33D) is the single accent and appears ONLY on links and the sun glow —
+   never as large fills or body text, exactly as the app rules it. Fraunces carries the
+   wordmark; the system font carries everything else. That contrast IS the identity. */
+
+:root {
+  --bg: #15110E;          /* warm near-black — darkroom at sundown */
+  --card: #201A15;
+  --raised: #2A211A;
+  --line: #3A2E24;
+  --text: #F4EDE3;        /* warm paper */
+  --dim: #B7A893;
+  --faint: #8A7C6A;
+  --amber: #E8A33D;       /* THE accent — links + sun only */
+  --amber-deep: #B97818;
+  --sun: #F6D8A0;         /* hot center of the glow */
+  --maxw: 720px;
+
+  --serif: "Fraunces", Georgia, "Times New Roman", serif;
+  --sys: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sys);
+  font-size: 17px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a { color: var(--amber); text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+::selection { background: rgba(232,163,61,0.25); }
+
+/* ---- shared shell ---- */
+.wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
+
+.wordmark {
+  font-family: var(--serif);
+  font-weight: 600;
+  letter-spacing: -0.5px;
+  color: var(--text);
+}
+
+/* ---- top bar (legal pages) ---- */
+.topbar {
+  border-bottom: 1px solid var(--line);
+  position: sticky; top: 0;
+  background: rgba(21,17,14,0.86);
+  backdrop-filter: saturate(140%) blur(8px);
+  -webkit-backdrop-filter: saturate(140%) blur(8px);
+  z-index: 5;
+}
+.topbar .wrap {
+  display: flex; align-items: center; justify-content: space-between;
+  height: 60px;
+}
+.topbar .wordmark { font-size: 22px; }
+.topbar nav { display: flex; gap: 18px; font-size: 14px; }
+.topbar nav a { color: var(--dim); }
+.topbar nav a[aria-current="page"] { color: var(--text); }
+
+/* ---- legal document ---- */
+.doc { padding: 40px 0 96px; }
+.doc .eyebrow {
+  font-size: 12px; letter-spacing: 1.4px; text-transform: uppercase;
+  color: var(--faint); margin: 0 0 10px;
+}
+.doc h1 {
+  font-family: var(--serif); font-weight: 600;
+  font-size: clamp(30px, 6vw, 40px); line-height: 1.05;
+  letter-spacing: -0.5px; margin: 0 0 6px;
+}
+.doc .meta { color: var(--faint); font-size: 14px; margin: 0 0 36px; }
+.doc section { margin: 0 0 30px; }
+.doc h2 {
+  font-family: var(--serif); font-weight: 600;
+  font-size: 19px; letter-spacing: -0.2px;
+  color: var(--text); margin: 0 0 12px;
+  padding-top: 8px;
+}
+.doc p { color: var(--dim); margin: 0 0 12px; }
+.doc ul { list-style: none; margin: 0 0 12px; padding: 0; }
+.doc li {
+  color: var(--dim); position: relative;
+  padding-left: 20px; margin: 0 0 8px;
+}
+.doc li::before {
+  content: "—"; position: absolute; left: 0; top: 0;
+  color: var(--amber); font-weight: 700;
+}
+.doc strong { color: var(--text); font-weight: 600; }
+
+/* ---- landing ---- */
+.hero {
+  position: relative; overflow: hidden;
+  min-height: 78vh;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center; padding: 80px 24px 56px;
+}
+/* the signature: the app icon's sun, rendered as ambient golden-hour light */
+.hero::before {
+  content: ""; position: absolute; inset: 0; z-index: 0;
+  background:
+    radial-gradient(120% 80% at 72% 8%, rgba(246,216,160,0.20), rgba(232,163,61,0.10) 26%, transparent 56%),
+    radial-gradient(140% 120% at 50% 120%, rgba(0,0,0,0.55), transparent 60%);
+  pointer-events: none;
+}
+.hero > * { position: relative; z-index: 1; }
+
+.mark {
+  width: 112px; height: 112px; border-radius: 26px;
+  margin-bottom: 26px;
+  box-shadow: 0 18px 60px rgba(0,0,0,0.45), 0 0 0 1px rgba(58,46,36,0.6);
+}
+.hero h1 {
+  font-family: var(--serif); font-weight: 600;
+  font-size: clamp(44px, 11vw, 72px); line-height: 1;
+  letter-spacing: -1px; margin: 0;
+}
+.tagline {
+  color: var(--dim); font-size: clamp(16px, 4.4vw, 19px);
+  margin: 16px 0 0; max-width: 30ch;
+}
+.badge {
+  display: inline-block; margin-top: 30px;
+  font-size: 13px; letter-spacing: 0.3px; color: var(--faint);
+  border: 1px solid var(--line); border-radius: 999px;
+  padding: 8px 16px;
+}
+
+.linkrow {
+  display: flex; flex-wrap: wrap; gap: 8px 22px; justify-content: center;
+  margin-top: 30px; font-size: 15px;
+}
+.linkrow a { color: var(--dim); }
+.linkrow a:hover { color: var(--amber); }
+
+.site-footer {
+  border-top: 1px solid var(--line);
+  color: var(--faint); font-size: 13px;
+  padding: 28px 0; text-align: center;
+}
+.site-footer a { color: var(--faint); }
+.site-footer a:hover { color: var(--dim); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .mark { transition: transform 0.4s ease; }
+}
+
+:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; border-radius: 4px; }
