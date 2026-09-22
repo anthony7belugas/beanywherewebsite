@@ -15,6 +15,7 @@
   --amber-deep: #B97818;
   --sun: #F6D8A0;         /* hot center of the glow */
   --maxw: 720px;
+  --gallery-maxw: 1040px;
 
   --serif: "Fraunces", Georgia, "Times New Roman", serif;
   --sys: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -33,6 +34,12 @@ body {
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+.landing-page {
+  background:
+    radial-gradient(95% 64% at 72% 0%, rgba(246,216,160,0.18), rgba(232,163,61,0.08) 28%, transparent 61%) no-repeat,
+    var(--bg);
 }
 
 a { color: var(--amber); text-decoration: none; }
@@ -101,45 +108,51 @@ a:hover { text-decoration: underline; text-underline-offset: 2px; }
 
 /* ---- landing ---- */
 .hero {
-  position: relative; overflow: hidden;
-  min-height: 78vh;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  text-align: center; padding: 80px 24px 56px;
+  display: flex; flex-direction: column; align-items: center;
+  text-align: center; padding: 70px 24px 46px;
 }
-/* the signature: the app icon's sun, rendered as ambient golden-hour light */
-.hero::before {
-  content: ""; position: absolute; inset: 0; z-index: 0;
-  background:
-    radial-gradient(120% 80% at 72% 8%, rgba(246,216,160,0.20), rgba(232,163,61,0.10) 26%, transparent 56%),
-    radial-gradient(140% 120% at 50% 120%, rgba(0,0,0,0.55), transparent 60%);
-  pointer-events: none;
-}
-.hero > * { position: relative; z-index: 1; }
 
 .mark {
-  width: 112px; height: 112px; border-radius: 26px;
-  margin-bottom: 26px;
+  width: 92px; height: 92px; border-radius: 23px;
+  margin-bottom: 24px;
   box-shadow: 0 18px 60px rgba(0,0,0,0.45), 0 0 0 1px rgba(58,46,36,0.6);
 }
 .hero h1 {
   font-family: var(--serif); font-weight: 600;
-  font-size: clamp(44px, 11vw, 72px); line-height: 1;
-  letter-spacing: -1px; margin: 0;
+  font-size: clamp(48px, 8vw, 72px); line-height: 1;
+  letter-spacing: -1.2px; margin: 0; color: var(--text);
 }
 .tagline {
-  color: var(--dim); font-size: clamp(16px, 4.4vw, 19px);
-  margin: 16px 0 0; max-width: 30ch;
+  color: var(--text); font-family: var(--serif); font-weight: 600;
+  font-size: clamp(24px, 3.4vw, 32px); line-height: 1.18;
+  letter-spacing: -0.35px; margin: 22px 0 0;
+}
+.description {
+  color: var(--dim); font-size: 16px; line-height: 1.65;
+  margin: 14px auto 0; max-width: 570px;
 }
 .badge {
-  display: inline-block; margin-top: 30px;
-  font-size: 13px; letter-spacing: 0.3px; color: var(--faint);
+  display: inline-block; margin-top: 26px;
+  font-size: 13px; letter-spacing: 0.3px; color: var(--dim);
   border: 1px solid var(--line); border-radius: 999px;
   padding: 8px 16px;
 }
 
+.preview-section {
+  max-width: var(--gallery-maxw); margin: 0 auto; padding: 6px 32px 64px;
+}
+.preview-grid {
+  display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px;
+}
+.preview-grid img {
+  display: block; width: 100%; height: auto; aspect-ratio: 3 / 4;
+  object-fit: cover; border-radius: 15px;
+  box-shadow: 0 18px 42px rgba(0,0,0,0.34);
+}
+
 .linkrow {
   display: flex; flex-wrap: wrap; gap: 8px 22px; justify-content: center;
-  margin-top: 30px; font-size: 15px;
+  margin: 0 0 12px; font-size: 14px;
 }
 .linkrow a { color: var(--dim); }
 .linkrow a:hover { color: var(--amber); }
@@ -151,9 +164,26 @@ a:hover { text-decoration: underline; text-underline-offset: 2px; }
 }
 .site-footer a { color: var(--faint); }
 .site-footer a:hover { color: var(--dim); }
+.landing-page .site-footer { padding: 27px 24px 30px; }
 
 @media (prefers-reduced-motion: no-preference) {
   .mark { transition: transform 0.4s ease; }
+}
+
+@media (max-width: 900px) {
+  .preview-section { max-width: 570px; padding-left: 20px; padding-right: 20px; }
+  .preview-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+}
+
+@media (max-width: 720px) {
+  .hero { padding-top: 54px; padding-bottom: 38px; }
+}
+
+@media (max-width: 440px) {
+  .mark { width: 82px; height: 82px; border-radius: 21px; }
+  .hero h1 { font-size: 47px; }
+  .description { font-size: 15px; }
+  .preview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 :focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; border-radius: 4px; }
