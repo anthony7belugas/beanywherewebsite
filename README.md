@@ -15,28 +15,28 @@ Three pages, no build step, no framework: `index.html`, `privacy.html`, `terms.h
 | `legal-data.mjs` | The legal text data, derived from the app's `src/lib/legal.ts`. |
 | `generate.mjs` | Builds `privacy.html` + `terms.html` from `legal-data.mjs`. |
 
-## Deploy (GitHub → Cloudflare Pages)
+## Update the existing site (GitHub → Cloudflare Pages)
 
-1. **Push this folder to a new GitHub repo** (e.g. `beanywhere-site`).
-2. **Cloudflare dashboard → Workers & Pages → Create → Pages → Connect to Git**, pick the repo.
-3. **Build settings — this is the one place to get right for a no-build static site:**
-   - Framework preset: **None**
-   - Build command: **(leave blank)**
-   - Build output directory: **`/`**
-4. Deploy. You'll get a `*.pages.dev` URL to check.
-5. **Custom domain → add `beanywhere.app`** (and `www.beanywhere.app` if you want). Because the
-   domain already lives in your Cloudflare account, it wires the DNS record and provisions SSL
-   automatically. (`.app` is forced-HTTPS — Cloudflare handles the cert.)
+This is a static site with no build step. Keep the existing GitHub repository and Cloudflare Pages
+project. Put the changed files on a new branch in that repository, review its Pages preview, then
+merge into the production branch. Pushing directly to the production branch may immediately update
+the live site.
+In Cloudflare Pages, use framework preset **None**, a blank build command, and output directory
+`/` if these settings need to be restored. Confirm `beanywhere.app` still points to this Pages
+project before relying on the public links.
 
-Every later `git push` to the repo auto-deploys.
+Check the published `https://beanywhere.app/privacy` and `https://beanywhere.app/terms` in a
+private browser window. Both should open without signing in, display the same text as the app,
+and link to each other and the support email.
 
 ## After it's live — wire the app + App Store
 
-- In the app, set `src/lib/theme.ts`:
-  - `tosUrl: 'https://beanywhere.app/terms'`
-  - `privacyUrl: 'https://beanywhere.app/privacy'`
-- In **App Store Connect**, set the **Privacy Policy URL** to `https://beanywhere.app/privacy`.
-  (A dead URL here is an automatic rejection — this is the item that unblocks submission.)
+- The app's `src/lib/theme.ts` already uses `https://beanywhere.app/terms` and
+  `https://beanywhere.app/privacy`. Verify both after deployment.
+- In **App Store Connect**, use `https://beanywhere.app/privacy` for Privacy Policy URL and
+  `https://beanywhere.app/` for Support URL (the homepage displays the support email).
+- Keep “Coming soon to the App Store” on the homepage until the listing is live; then replace it
+  with a link to the actual App Store listing.
 
 ## Keeping the legal text in sync with the app (important)
 

@@ -49,20 +49,20 @@ function page({ title, slug, otherSlug, otherLabel, sections }) {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="index,follow">
   <title>${title} · BeAnywhere</title>
-  <meta name="description" content="${title} for BeAnywhere — the app that turns your selfies into AI travel photos.">
-  <link rel="icon" type="image/png" href="icon.png">
+  <meta name="description" content="${title} for BeAnywhere, the AI photoshoot app.">
+  <link rel="icon" type="image/png" href="/icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
   <header class="topbar">
     <div class="wrap">
-      <a class="wordmark" href="./">BeAnywhere</a>
+      <a class="wordmark" href="/">BeAnywhere</a>
       <nav>
-        <a href="privacy.html"${slug === 'privacy' ? ' aria-current="page"' : ''}>Privacy</a>
-        <a href="terms.html"${slug === 'terms' ? ' aria-current="page"' : ''}>Terms</a>
+        <a href="/privacy"${slug === 'privacy' ? ' aria-current="page"' : ''}>Privacy</a>
+        <a href="/terms"${slug === 'terms' ? ' aria-current="page"' : ''}>Terms</a>
       </nav>
     </div>
   </header>
@@ -77,7 +77,7 @@ ${renderSections(sections)}
 
   <footer class="site-footer">
     <div class="wrap">
-      © ${new Date().getFullYear()} ${esc(LEGAL_INFO.name)} · <a href="${otherSlug}.html">${otherLabel}</a> · <a href="mailto:${EMAIL}">Contact</a>
+      © ${new Date().getFullYear()} ${esc(LEGAL_INFO.name)} · <a href="/${otherSlug}">${otherLabel}</a> · <a href="mailto:${EMAIL}">Contact</a>
     </div>
   </footer>
 </body>
