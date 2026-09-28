@@ -60,7 +60,8 @@ function page({ title, slug, otherSlug, otherLabel, sections }) {
   <header class="topbar">
     <div class="wrap">
       <a class="wordmark" href="/">BeAnywhere</a>
-      <nav>
+      <nav aria-label="Site">
+        <a href="/support">Support</a>
         <a href="/privacy"${slug === 'privacy' ? ' aria-current="page"' : ''}>Privacy</a>
         <a href="/terms"${slug === 'terms' ? ' aria-current="page"' : ''}>Terms</a>
       </nav>
@@ -77,7 +78,7 @@ ${renderSections(sections)}
 
   <footer class="site-footer">
     <div class="wrap">
-      © ${new Date().getFullYear()} ${esc(LEGAL_INFO.name)} · <a href="/${otherSlug}">${otherLabel}</a> · <a href="mailto:${EMAIL}">Contact</a>
+      © ${new Date().getFullYear()} ${esc(LEGAL_INFO.name)} · <a href="/${otherSlug}">${otherLabel}</a> · <a href="/support">Support</a> · <a href="mailto:${EMAIL}">Contact</a>
     </div>
   </footer>
 </body>

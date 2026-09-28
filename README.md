@@ -1,13 +1,14 @@
 # BeAnywhere — site
 
 Static marketing + legal site for **BeAnywhere**, served at **https://beanywhere.app**.
-Three pages, no build step, no framework: `index.html`, `privacy.html`, `terms.html`.
+Four pages, no build step, no framework: `index.html`, `support.html`, `privacy.html`, `terms.html`.
 
 ## Files
 
 | File | What it is |
 |---|---|
 | `index.html` | Landing page (brand hero + links). |
+| `support.html` | Contact details and short help answers, served at `/support`. |
 | `privacy.html` | Privacy Policy — **generated**, do not hand-edit. |
 | `terms.html` | Terms of Service — **generated**, do not hand-edit. |
 | `styles.css` | Shared styles, mirrors the app's "golden-hour" theme. |
@@ -25,16 +26,18 @@ In Cloudflare Pages, use framework preset **None**, a blank build command, and o
 `/` if these settings need to be restored. Confirm `beanywhere.app` still points to this Pages
 project before relying on the public links.
 
-Check the published `https://beanywhere.app/privacy` and `https://beanywhere.app/terms` in a
-private browser window. Both should open without signing in, display the same text as the app,
-and link to each other and the support email.
+Check the published `https://beanywhere.app/support`, `https://beanywhere.app/privacy`, and
+`https://beanywhere.app/terms` in a private browser window. All should open without signing in.
+The legal pages should display the same text as the app. The support page should show the
+contact email and working links to the legal pages. Confirm `support@beanywhere.app` receives mail.
+Cloudflare Pages serves the `.html` files at these extensionless URLs.
 
 ## After it's live — wire the app + App Store
 
 - The app's `src/lib/theme.ts` already uses `https://beanywhere.app/terms` and
   `https://beanywhere.app/privacy`. Verify both after deployment.
 - In **App Store Connect**, use `https://beanywhere.app/privacy` for Privacy Policy URL and
-  `https://beanywhere.app/` for Support URL (the homepage displays the support email).
+  `https://beanywhere.app/support` for Support URL. The support page should be live before submission.
 - Keep “Coming soon to the App Store” on the homepage until the listing is live; then replace it
   with a link to the actual App Store listing.
 

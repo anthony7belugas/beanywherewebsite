@@ -50,7 +50,7 @@ a:hover { text-decoration: underline; text-underline-offset: 2px; }
   color: var(--text);
 }
 
-/* ---- top bar (legal pages) ---- */
+/* ---- top bar (support and legal pages) ---- */
 .topbar {
   border-bottom: 1px solid var(--line);
   position: sticky; top: 0;
@@ -61,7 +61,8 @@ a:hover { text-decoration: underline; text-underline-offset: 2px; }
 }
 .topbar .wrap {
   display: flex; align-items: center; justify-content: space-between;
-  height: 60px;
+  min-height: 60px; flex-wrap: wrap; gap: 8px 16px;
+  padding-top: 12px; padding-bottom: 12px;
 }
 .topbar .wordmark { font-size: 22px; }
 .topbar nav { display: flex; gap: 18px; font-size: 14px; }
@@ -98,6 +99,14 @@ a:hover { text-decoration: underline; text-underline-offset: 2px; }
   color: var(--amber); font-weight: 700;
 }
 .doc strong { color: var(--text); font-weight: 600; }
+
+/* ---- support ---- */
+.support { max-width: 720px; padding-left: 24px; padding-right: 24px; }
+.support .support-intro { margin: 20px 0 6px; }
+.support .support-contact { font-size: clamp(20px, 5.3vw, 24px); margin-bottom: 14px; }
+.support .support-contact a { overflow-wrap: anywhere; }
+.support .support-hint { font-size: 15px; margin-bottom: 36px; }
+.support section { padding-top: 18px; border-top: 1px solid var(--line); }
 
 /* ---- landing ---- */
 .hero {
