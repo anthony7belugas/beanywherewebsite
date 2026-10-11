@@ -1,65 +1,60 @@
 # BeAnywhere — site
 
-Static marketing + legal site for **BeAnywhere**, served at **https://beanywhere.app**.
-Four pages, no build step, no framework: `index.html`, `support.html`, `privacy.html`, `terms.html`.
+Static marketing, support and legal site for **BeAnywhere**, served at **https://beanywhere.app**.
+Four pages, no framework or deployment build step: `index.html`, `support.html`, `privacy.html`, `terms.html`.
 
 ## Files
 
 | File | What it is |
 |---|---|
-| `index.html` | Landing page (brand hero + links). |
-| `support.html` | Contact details and short help answers, served at `/support`. |
-| `privacy.html` | Privacy Policy — **generated**, do not hand-edit. |
-| `terms.html` | Terms of Service — **generated**, do not hand-edit. |
-| `styles.css` | Shared styles, mirrors the app's "golden-hour" theme. |
-| `icon.png` | The app icon (favicon + hero mark). |
-| `legal-data.mjs` | The legal text data, derived from the app's `src/lib/legal.ts`. |
-| `generate.mjs` | Builds `privacy.html` + `terms.html` from `legal-data.mjs`. |
+| `index.html` | Photoshoot-first landing page with accurate launch availability. |
+| `support.html` | iPhone/Android help and account deletion by app or email, served at `/support`. |
+| `privacy.html` | Privacy Policy — generated; edit `legal-data.mjs` instead. |
+| `terms.html` | Terms of Service — generated; edit `legal-data.mjs` instead. |
+| `styles.css` | Shared styles matching the app's golden-hour theme. |
+| `icon.png` | The app icon, used for the favicon and hero. |
+| `legal-data.mjs` | Shared website policy text with explicit Apple and Android sections. |
+| `generate.mjs` | Generates `privacy.html` and `terms.html` from `legal-data.mjs`. |
 
-## Update the existing site (GitHub → Cloudflare Pages)
+## Update the site
 
-This is a static site with no build step. Keep the existing GitHub repository and Cloudflare Pages
-project. Put the changed files on a new branch in that repository, review its Pages preview, then
-merge into the production branch. Pushing directly to the production branch may immediately update
-the live site.
-In Cloudflare Pages, use framework preset **None**, a blank build command, and output directory
-`/` if these settings need to be restored. Confirm `beanywhere.app` still points to this Pages
-project before relying on the public links.
+Use the existing GitHub repository and Cloudflare Pages project. Make changes on a branch,
+review the Pages preview, then merge into the production branch when publishing is intended.
+Pushing to the production branch may immediately update the live site.
 
-Check the published `https://beanywhere.app/support`, `https://beanywhere.app/privacy`, and
-`https://beanywhere.app/terms` in a private browser window. All should open without signing in.
-The legal pages should display the same text as the app. The support page should show the
-contact email and working links to the legal pages. Confirm `support@beanywhere.app` receives mail.
-Cloudflare Pages serves the `.html` files at these extensionless URLs.
+For policy changes, edit `legal-data.mjs`, set the effective date appropriately, then run:
 
-## After it's live — wire the app + App Store
+```sh
+node generate.mjs
+git diff --check
+```
 
-- The app's `src/lib/theme.ts` already uses `https://beanywhere.app/terms` and
-  `https://beanywhere.app/privacy`. Verify both after deployment.
-- In **App Store Connect**, use `https://beanywhere.app/privacy` for Privacy Policy URL and
-  `https://beanywhere.app/support` for Support URL. The support page should be live before submission.
-- Keep “Coming soon to the App Store” on the homepage until the listing is live; then replace it
-  with a link to the actual App Store listing.
+Commit both the source and generated HTML. Compare the wording with the app's
+`src/lib/legal.ts` (Apple) and `src/lib/platformLegal.ts` (Android), including actual account,
+payment and data-handling behavior. Keep shared disclosures consistent while clearly scoping
+platform-specific instructions. Do not copy the Apple-only source over `legal-data.mjs`:
+that would erase Android disclosures and the external account-deletion information.
+Website changes do not update the legal text bundled inside an already submitted app.
 
-## Keeping the legal text in sync with the app (important)
+Cloudflare Pages uses framework preset **None**, a blank build command and output directory `/`.
+It serves the `.html` files at their existing extensionless URLs. Retain the custom domain
+`beanywhere.app` and existing page addresses.
 
-The canonical legal wording lives in the app at `src/lib/legal.ts`. The two pages here are a
-**generated mirror** of it — same words, so the app and the website never disagree.
+## Review before publishing
 
-When you change `legal.ts` (new clause, effective date, etc.):
+- Open all four pages on desktop and a narrow mobile viewport; check links, spacing and readability.
+- Check `/support#delete-account` lands on the deletion instructions below the sticky header.
+- Confirm Apple-specific additional terms and retention disclosures remain intact.
+- Confirm email links open `support@beanywhere.app`; monitor and fulfill support/deletion requests.
+- Preserve the photoshoot-first homepage and accurate availability. Add each store's download
+  link only when that public listing is available.
+- After publication, check the HTTPS pages without signing in, including the deletion anchor.
 
-1. Copy the app's `src/lib/legal.ts` over `legal-data.mjs`, then strip the 3 TypeScript-only bits:
-   ```bash
-   cp ../BeThere/src/lib/legal.ts legal-data.mjs
-   sed -i '' '/^export type LegalSection/d' legal-data.mjs
-   sed -i '' 's/export const PRIVACY: LegalSection\[\] = \[/export const PRIVACY = [/' legal-data.mjs
-   sed -i '' 's/export const TERMS: LegalSection\[\] = \[/export const TERMS = [/' legal-data.mjs
-   ```
-   *(On Linux, drop the `''` after `-i`.)*
-2. Regenerate and push:
-   ```bash
-   node generate.mjs
-   git commit -am "sync legal text" && git push
-   ```
+## Store and sign-in links
 
-That's the whole loop: edit `legal.ts` in the app → mirror it here → regenerate → push.
+- App Store Connect: Privacy Policy `https://beanywhere.app/privacy`; Support `https://beanywhere.app/support`.
+- Google Play: Privacy Policy `https://beanywhere.app/privacy`; account deletion `https://beanywhere.app/support#delete-account`.
+- Google sign-in branding: homepage `https://beanywhere.app/`, Privacy `https://beanywhere.app/privacy`, Terms `https://beanywhere.app/terms`.
+
+Configure these service fields separately after the relevant pages are published. This repository
+does not change store listings, sign-in configuration or the app's deletion implementation.
