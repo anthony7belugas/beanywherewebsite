@@ -70,7 +70,8 @@ a:hover { text-decoration: underline; text-underline-offset: 2px; }
 .topbar nav a[aria-current="page"] { color: var(--text); }
 
 /* ---- legal document ---- */
-.doc { padding: 40px 0 96px; }
+.doc { padding: 40px 24px 96px; }
+.doc [id] { scroll-margin-top: 110px; }
 .doc .eyebrow {
   font-size: 12px; letter-spacing: 1.4px; text-transform: uppercase;
   color: var(--faint); margin: 0 0 10px;
@@ -139,6 +140,7 @@ a:hover { text-decoration: underline; text-underline-offset: 2px; }
   color: var(--dim); font-size: clamp(16px, 4.4vw, 19px);
   margin: 16px 0 0; max-width: 30ch;
 }
+.intro { color: var(--dim); font-size: 16px; max-width: 44ch; margin: 18px 0 0; }
 .badge {
   display: inline-block; margin-top: 30px;
   font-size: 13px; letter-spacing: 0.3px; color: var(--faint);

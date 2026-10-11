@@ -1,18 +1,13 @@
-// Canonical legal text for BeAnywhere — rendered in-app at /privacy and /terms, and
-// the source you mirror onto your website later ("the website just follows the app").
-//
-// FILL IN the five fields in LEGAL_INFO below; they flow into BOTH documents.
-// Until you do, the app will literally show "[LEGAL NAME]" etc., so set these
-// before you ship to TestFlight.
-//
-// NOTE: This is a solid, compliance-oriented starting template — not legal advice.
-// Have a privacy attorney review the biometric language (Privacy §4) and the
-// arbitration clause (Terms §14) before you scale.
+// Website legal text for BeAnywhere on Apple devices and Android.
+// Generate privacy.html and terms.html with `node generate.mjs` after editing.
+// Compare changes with the app's legal.ts and platformLegal.ts; do not overwrite
+// this file with the Apple-only source and lose the Android or support disclosures.
 
 export const LEGAL_INFO = {
   name: 'Besties, Inc.',                     // registered entity (matches your approved Besties docs)
-  effectiveDate: 'September 10, 2026',         // set to your actual launch/publish date if later
+  effectiveDate: 'October 10, 2026',
   supportEmail: 'support@beanywhere.app', // your real support address
+  accountDeletionUrl: 'https://beanywhere.app/support#delete-account',
   state: 'California',                       // your home state
   venue: 'Los Angeles County, California',   // court venue for any non-arbitrated dispute
 };
@@ -23,6 +18,7 @@ const I = LEGAL_INFO;
 export const PRIVACY = [
   { body: [
     `This Privacy Policy explains how ${I.name} (“BeAnywhere,” “we,” “us”) collects, uses, and protects your information when you use the BeAnywhere mobile app (the “App”). BeAnywhere lets you upload photos of yourself and generates stylized, AI-created images of you in different scenes. This Policy explains our practices; it does not replace a separate permission where one is required.`,
+    `This Policy covers the App on Apple devices and Android. Sign-in and payment providers depend on the platform, as described below.`,
     `We built BeAnywhere to do one thing with your photos — make fun images of you — and to hold onto as little as possible for as short a time as possible.`,
   ] },
   { title: '1. The short version', body: [
@@ -36,10 +32,11 @@ export const PRIVACY = [
     `Photos you provide. When you create a pack, you upload a small number of selfies. These are used to generate your images and are stored only as long as described in Section 5.`,
     `Images we generate. The AI photos we create for you (“packs”) are stored so you can view, save, and re-open them.`,
     `Device identifier. When you first open the App, we create an anonymous identifier stored securely on your device. This is how your packs are associated with you and restored when you reopen the App. It is not your name and does not by itself identify you in the real world.`,
-    `Sign in with Apple (optional). Signing in is optional and is offered only so your packs can follow you to a new phone. If you choose it, we receive the name and email you authorize Apple to share — which may be Apple’s private relay email if you choose to hide your address. We do not automatically email packs to that address. Pack email is a separate action: you type or confirm a delivery address and tap Send photos for each pack. You can use the App fully without ever signing in.`,
-    `Purchase information. When you buy a pack, the purchase is processed by Apple through in-app purchase. We receive a confirmation that a purchase was made; we do not receive or store your credit-card number — Apple handles payment.`,
+    `Sign in with Apple (optional, on Apple devices). Signing in is optional and is offered only so your packs can follow you to a new Apple device. If you choose it, we receive the name and email you authorize Apple to share — which may be Apple’s private relay email if you choose to hide your address. We do not automatically email packs to that address. Pack email is a separate action: you type or confirm a delivery address and tap Send photos for each pack. You can use the App fully without ever signing in.`,
+    `Sign in with Google (optional, on Android). Signing in is optional and lets you restore your packs on another Android device. If you choose it, we receive your Google account identifier and the name and email Google provides. We use the verified account identifier to connect your packs. Google sign-in does not grant us access to Gmail, Google Drive, or your Google Photos library. We do not automatically email packs to your Google address. Pack email is a separate action: you type or confirm a delivery address and tap Send photos for each pack. You can use the App fully without signing in with Google.`,
+    `Purchase information. When you buy a pack, the purchase is processed through Apple’s in-app purchase on Apple devices or Google Play billing on Android. We receive purchase confirmations and transaction information to verify purchases, deliver packs, and handle purchase status and refunds, with help from RevenueCat. We do not receive or store your credit-card number — the applicable store handles payment.`,
     `Operational records. We keep the purchase, refund, delivery, generation-cost, and security records needed to operate the service and reconcile the business. Selected women’s or men’s styling describes a product choice, not an inference about your gender.`,
-    `Product analytics. We use Google Analytics for Firebase (GA4) and our own event service to understand visits, pack selection, uploads, checkout, photo saves, and return visits. We send an opaque analytics identifier, app-instance identifiers, app/device information, and fixed product/event parameters. Google may derive approximate location from network information. We do not send your photos, image URLs, email, Apple credential, or device-ban identity to GA4. Advertising identifiers and advertising-personalization signals are disabled.`,
+    `Product analytics. We use Google Analytics for Firebase (GA4) and our own event service to understand visits, pack selection, uploads, checkout, photo saves, and return visits. We send an opaque analytics identifier, app-instance identifiers, app/device information, and fixed product/event parameters. Google may derive approximate location from network information. We do not send your photos, image URLs, email, Apple or Google sign-in credential, or device-ban identity to GA4. Advertising identifiers and advertising-personalization signals are disabled.`,
     `Crash diagnostics. We use Firebase Crashlytics to receive crash and device/app diagnostic information so we can identify and fix reliability problems. We report handled errors using a fixed context and error category instead of the original sensitive message, and do not attach your account ID, email, photos, or image URLs. Native crash reports include diagnostic installation identifiers and stack information.`,
     `Abuse prevention. To stop automated scripts from blocking uploads, our server converts the request network address into a one-way, server-secret daily bucket. We do not store the raw address in that bucket, and the bucket expires automatically after approximately two days.`,
     `Support communications. If you email us, we receive your message and the support identifier you send so we can find your packs and help you.`,
@@ -47,7 +44,7 @@ export const PRIVACY = [
   { title: '3. How we use your information', body: [
     `We use the information above to:`,
     `• generate your AI images and deliver, display, and restore your packs;`,
-    `• process your purchases (via Apple) and provide any credits or re-shoots you’re owed;`,
+    `• process your purchases (via Apple or Google Play, depending on your platform) and provide any credits or re-shoots you’re owed;`,
     `• respond to your support requests;`,
     `• understand how the App is used, measure product performance, and improve reliability;`,
     `• keep the App secure, prevent abuse, and fix problems;`,
@@ -62,7 +59,7 @@ export const PRIVACY = [
     `• We do not sell or license your facial images to others.`,
     `• We do not opt your photos into AI-model training or improvement.`,
     `Written retention and destruction policy. We retain uploaded photos in our Firebase storage only as long as needed to provide the service and automatically delete them within 30 days after you most recently upload or reuse them. Generated packs are retained until you delete them (or delete all of your data). Our service providers may temporarily process or retain data for safety, abuse prevention, security, or legal obligations under their applicable terms and policies. If we ever stop offering the App, we will delete photos and generated images stored in our systems within a commercially reasonable time. This Section 4 is our publicly available written policy governing the retention and permanent destruction of facial information in our systems, as may be required by applicable biometric-privacy laws (including the Illinois Biometric Information Privacy Act).`,
-    `Your consent. Before you upload photos, the App asks you to consent to this processing. You can withdraw consent at any time by deleting your data in the App and discontinuing use.`,
+    `Your consent. Before you upload photos, the App asks you to consent to this processing. You can withdraw consent at any time by deleting your data in the App or requesting deletion by email as described in Section 7, and discontinuing use.`,
   ] },
   { title: '5. How long we keep data', body: [
     `• Uploaded selfies in our Firebase storage: automatically deleted within 30 days after you most recently upload or reuse them. Temporary service-provider processing or retention may occur for safety, abuse prevention, security, or legal obligations under the provider’s applicable terms and policies.`,
@@ -78,7 +75,8 @@ export const PRIVACY = [
   ] },
   { title: '6. Who we share data with (service providers)', body: [
     `We use a small number of trusted service providers that process data on our behalf, only to run the App:`,
-    `• Apple — in-app purchases and, if you choose it, Sign in with Apple.`,
+    `• Apple — in-app purchases and, if you choose it, Sign in with Apple on Apple devices.`,
+    `• Google — Google Play billing and, if you choose it, Sign in with Google on Android.`,
     `• RevenueCat — purchase verification and purchase-status handling.`,
     `• Our AI image-generation provider (currently OpenAI) — to perform image generation and related safety and abuse checks. OpenAI states that API data is not used to train its models unless the API customer opts in; we do not opt in. OpenAI may temporarily retain or review content for abuse monitoring, safety, security, or legal obligations under its applicable policies.`,
     `• Google Firebase / Google Cloud — authentication, database, file storage, server functions, GA4 usage analytics, and Crashlytics diagnostics used to run and improve the App.`,
@@ -89,6 +87,7 @@ export const PRIVACY = [
   { title: '7. Your rights and choices', body: [
     `• Delete your data anytime: Settings → Delete my photos & packs removes your uploaded photos and generated packs from BeAnywhere. It cannot remove copies saved to Photos, shared, screenshotted, or delivered by email.`,
     `• Delete your account anytime: Settings → Delete account removes your account, profile, contact information, device credential, uploaded photos, and generated images. Group business results and limited restricted generation and transaction evidence without photos or contact information may remain for accounting, reconciliation, security, and anti-fraud purposes. Individual raw usage events and purchase-cohort links are removed.`,
+    `• Request deletion by email: You can also request deletion of your BeAnywhere account and associated data by emailing ${I.supportEmail}, including if you no longer have the App. See ${I.accountDeletionUrl} for instructions. The same deletion and retention details described in this Policy apply.`,
     `• California residents (CCPA/CPRA): You have the right to know what personal information we collect, to access and delete it, to correct it, and to limit the use of sensitive personal information (which can include facial images). We do not sell or share your personal information for cross-context behavioral advertising. To exercise these rights, use the in-app deletion option or email us. We will not discriminate against you for exercising your rights.`,
     `• Other states / regions: If your jurisdiction grants similar rights, you may contact us to exercise them.`,
   ] },
@@ -112,13 +111,14 @@ export const PRIVACY = [
 export const TERMS = [
   { body: [
     `These Terms of Service (“Terms”) are a binding agreement between you and ${I.name} (“BeAnywhere,” “we,” “us”) governing your use of the BeAnywhere mobile app (the “App”). Please read Section 15 carefully — it requires most disputes to be resolved by individual arbitration and waives class actions, unless you opt out within 30 days.`,
+    `These Terms cover the App on Apple devices and Android. Platform-specific purchase terms apply to purchases made through that store, and Section 10 applies only to the App obtained from the Apple App Store.`,
     `By downloading or using the App, you agree to these Terms. If you don’t agree, don’t use the App.`,
   ] },
   { title: '1. Eligibility', body: [
     `You must be at least 18 years old to use BeAnywhere. By using the App you represent that you are 18 or older.`,
   ] },
   { title: '2. What BeAnywhere does', body: [
-    `BeAnywhere lets you upload photos of yourself and uses AI to generate stylized images of you in various scenes (“packs”). You buy packs through Apple’s in-app purchase. We may modify, add, remove, or discontinue packs, features, or the App itself, in whole or in part, at any time and without liability to you.`,
+    `BeAnywhere lets you upload photos of yourself and uses AI to generate stylized images of you in various scenes (“packs”). You buy packs through Apple’s in-app purchase on Apple devices or Google Play billing on Android. We may modify, add, remove, or discontinue packs, features, or the App itself, in whole or in part, at any time and without liability to you.`,
   ] },
   { title: '3. Your photos and your content', body: [
     `• You keep ownership of the photos you upload. You grant BeAnywhere a limited, non-exclusive license to use, process, and store your photos solely to provide the App’s features to you (generating, delivering, and restoring your packs) as described in our Privacy Policy.`,
@@ -126,14 +126,15 @@ export const TERMS = [
     `• You promise that: (a) every uploaded reference photo is of you and only you; (b) you have all rights needed to upload it; and (c) you are at least 18 years old. You may not upload reference photos of any other person, including anyone under 18.`,
   ] },
   { title: '4. Consent to image processing', body: [
-    `By uploading photos, you consent to BeAnywhere processing images that contain your face to generate stylized images at your request and to support related security and provider safety checks, as described in our Privacy Policy. BeAnywhere does not use facial recognition to identify you, does not create or store a faceprint or biometric identifier for identification, does not sell facial data, and does not opt your photos into AI-model training. You may withdraw consent by deleting your data in the App and discontinuing use.`,
+    `By uploading photos, you consent to BeAnywhere processing images that contain your face to generate stylized images at your request and to support related security and provider safety checks, as described in our Privacy Policy. BeAnywhere does not use facial recognition to identify you, does not create or store a faceprint or biometric identifier for identification, does not sell facial data, and does not opt your photos into AI-model training. You may withdraw consent by deleting your data in the App or requesting deletion by email as described in our Privacy Policy, and discontinuing use.`,
   ] },
   { title: '5. AI-generated results', body: [
     `The images BeAnywhere produces are AI-generated and will vary. We do not guarantee that any image will be photorealistic, flattering, an accurate likeness, or free of artifacts. AI image generation is inherently unpredictable. You are responsible for how you use the images, and you agree not to use them to deceive, defraud, impersonate, harass, or mislead anyone, or in any unlawful way.`,
   ] },
   { title: '6. Purchases, pricing, and refunds', body: [
-    `• Packs are sold as consumable in-app purchases through Apple at the price shown in the App at the time of purchase. Payment is charged to your Apple Account.`,
-    `• Because packs are generated on demand, all sales are final except where a refund is required by law or granted by Apple. Refund requests for App Store purchases are handled by Apple under Apple’s policies.`,
+    `• Packs are sold as one-time, consumable in-app purchases through Apple on Apple devices or Google Play on Android, at the price shown in the App at the time of purchase. Payment is charged through the applicable store account.`,
+    `• App Store purchases: Because packs are generated on demand, all sales are final except where a refund is required by law or granted by Apple. Refund requests for App Store purchases are handled by Apple under Apple’s policies.`,
+    `• Google Play purchases: Refunds are subject to applicable law and Google Play’s refund policies. You can request a refund through Google Play or contact us for purchase support.`,
     `• If generation doesn’t finish as expected, the App provides eligible retries, replacement pack credits, and support options as described in the App.`,
     `• We may change prices prospectively; changes don’t affect purchases already made.`,
   ] },
@@ -150,7 +151,7 @@ export const TERMS = [
     `The App itself — including its software, design, branding, and the “BeAnywhere” name and logo — is owned by us and protected by law. These Terms don’t give you any rights in the App except the limited right to use it as intended. If you send us feedback, ideas, or suggestions, you grant us a perpetual, irrevocable, royalty-free license to use them without restriction or obligation to you.`,
   ] },
   { title: '9. Third-party services', body: [
-    `The App relies on Apple, RevenueCat, our AI image-generation provider (currently OpenAI), Google Firebase/Cloud, Expo, and Resend to function as described in the Privacy Policy. Your use of the App may also be subject to Apple’s terms. We aren’t responsible for third-party services we don’t control.`,
+    `The App relies on Apple or Google Play and Google sign-in, depending on your platform and choices, as well as RevenueCat, our AI image-generation provider (currently OpenAI), Google Firebase/Cloud, Expo, and Resend to function as described in the Privacy Policy. Your use of these services may also be subject to the applicable provider’s terms. We aren’t responsible for third-party services we don’t control.`,
   ] },
   { title: '10. Apple App Store — additional terms', body: [
     `These Terms are between you and ${I.name} only, and not with Apple Inc. (“Apple”). Apple is not responsible for the App or its content. To the extent these Terms apply to your use of the App obtained from the Apple App Store, you and we acknowledge:`,
@@ -172,7 +173,7 @@ export const TERMS = [
     `You agree to indemnify and hold harmless BeAnywhere and ${I.name} from claims, damages, and expenses (including reasonable legal fees) arising from your misuse of the App, your content, or your violation of these Terms or others’ rights (including uploading someone else’s photo).`,
   ] },
   { title: '14. Termination', body: [
-    `You may stop using the App at any time and delete your data in Settings. We may suspend or terminate your access if you violate these Terms or to protect the App and its users. Sections that by their nature should survive termination (including Sections 8 and 11–13, 15, and 16) will survive.`,
+    `You may stop using the App at any time and delete your data in Settings or request deletion by emailing ${I.supportEmail}, as described in our Privacy Policy. We may suspend or terminate your access if you violate these Terms or to protect the App and its users. Sections that by their nature should survive termination (including Sections 8 and 11–13, 15, and 16) will survive.`,
   ] },
   { title: '15. Dispute resolution — arbitration and class-action waiver', body: [
     `Please read this section carefully.`,

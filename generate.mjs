@@ -1,16 +1,17 @@
-// Generates privacy.html + terms.html from the SAME data the app renders (legal-data.mjs,
-// derived from src/lib/legal.ts). Run: node generate.mjs
-// This is the sync mechanism: regenerate whenever legal.ts changes so the site never drifts.
+// Generates the shared Apple/Android website policies from legal-data.mjs.
+// Run: node generate.mjs. Keep the source aligned with both app policy variants.
 import { writeFileSync } from 'node:fs';
 import { LEGAL_INFO, PRIVACY, TERMS } from './legal-data.mjs';
 
 const esc = (s) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-// Make the support email clickable wherever it appears in the body text.
+// Only link the known support email and account-deletion URL in escaped policy text.
 const EMAIL = LEGAL_INFO.supportEmail;
-const linkifyEmail = (html) =>
-  html.split(EMAIL).join(`<a href="mailto:${EMAIL}">${EMAIL}</a>`);
+const DELETION_URL = LEGAL_INFO.accountDeletionUrl;
+const linkifySupport = (html) =>
+  html.split(EMAIL).join(`<a href="mailto:${EMAIL}">${EMAIL}</a>`)
+    .split(DELETION_URL).join(`<a href="${DELETION_URL}">account deletion instructions</a>`);
 
 // Render one section's body array: group consecutive "•" lines into a <ul>, the rest <p>.
 function renderBody(body) {
@@ -20,7 +21,7 @@ function renderBody(body) {
     if (list.length) { out.push(`<ul>${list.join('')}</ul>`); list = []; }
   };
   for (const raw of body) {
-    const line = linkifyEmail(esc(raw));
+    const line = linkifySupport(esc(raw));
     if (raw.trimStart().startsWith('•')) {
       list.push(`<li>${line.replace(/^\s*•\s*/, '')}</li>`);
     } else {
@@ -49,7 +50,8 @@ function page({ title, slug, otherSlug, otherLabel, sections }) {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="index,follow">
   <title>${title} · BeAnywhere</title>
-  <meta name="description" content="${title} for BeAnywhere, the AI photoshoot app.">
+  <meta name="description" content="${title} for BeAnywhere, the personal photoshoot app for Apple devices and Android.">
+  <link rel="canonical" href="https://beanywhere.app/${slug}">
   <link rel="icon" type="image/png" href="/icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -78,7 +80,7 @@ ${renderSections(sections)}
 
   <footer class="site-footer">
     <div class="wrap">
-      © ${new Date().getFullYear()} ${esc(LEGAL_INFO.name)} · <a href="/${otherSlug}">${otherLabel}</a> · <a href="/support">Support</a> · <a href="mailto:${EMAIL}">Contact</a>
+      © ${new Date().getFullYear()} ${esc(LEGAL_INFO.name)} · <a href="/${otherSlug}">${otherLabel}</a> · <a href="/support">Support</a> · <a href="/support#delete-account">Delete account</a> · <a href="mailto:${EMAIL}">Contact</a>
     </div>
   </footer>
 </body>

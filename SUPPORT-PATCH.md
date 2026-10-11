@@ -1,5 +1,8 @@
 # BeAnywhere support page patch
 
+Historical September 2026 patch notes. For the current Apple/Android site and deployment
+workflow, follow `README.md`; do not reapply the old patch over the current files.
+
 ## Apply
 
 1. Unzip this patch and copy its website files into the root of your existing BeAnywhere website repository, replacing files with the same names.
