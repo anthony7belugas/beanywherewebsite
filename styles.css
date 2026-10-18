@@ -148,6 +148,15 @@ a:hover { text-decoration: underline; text-underline-offset: 2px; }
   padding: 8px 16px;
 }
 
+.follow-prompt { color: var(--dim); font-size: 15px; margin: 28px 0 12px; }
+.socialrow { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+.socialrow a {
+  color: var(--text); font-size: 15px; font-weight: 600;
+  border: 1px solid var(--line); border-radius: 999px;
+  background: var(--card); padding: 9px 18px;
+}
+.socialrow a:hover, .socialrow a:focus-visible { border-color: var(--amber-deep); text-decoration: none; }
+
 .linkrow {
   display: flex; flex-wrap: wrap; gap: 8px 22px; justify-content: center;
   margin-top: 30px; font-size: 15px;
