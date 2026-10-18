@@ -7,11 +7,13 @@ Four pages, no framework or deployment build step: `index.html`, `support.html`,
 
 | File | What it is |
 |---|---|
-| `index.html` | Photoshoot-first landing page with accurate launch availability. |
+| `index.html` | Android launch landing page with direct Google Play download links. |
 | `support.html` | iPhone/Android help and account deletion by app or email, served at `/support`. |
 | `privacy.html` | Privacy Policy — generated; edit `legal-data.mjs` instead. |
 | `terms.html` | Terms of Service — generated; edit `legal-data.mjs` instead. |
 | `styles.css` | Shared styles matching the app's golden-hour theme. |
+| `landing.css` | Responsive homepage styles; support and policy pages retain the shared styles. |
+| `assets/` | Optimized Google Play screenshots, pack previews, sharing image, and licensed Fraunces fonts. |
 | `icon.png` | The app icon, used for the favicon and hero. |
 | `legal-data.mjs` | Shared website policy text with explicit Apple and Android sections. |
 | `generate.mjs` | Generates `privacy.html` and `terms.html` from `legal-data.mjs`. |
@@ -58,3 +60,16 @@ It serves the `.html` files at their existing extensionless URLs. Retain the cus
 
 Configure these service fields separately after the relevant pages are published. This repository
 does not change store listings, sign-in configuration or the app's deletion implementation.
+
+## Android landing page assets
+
+The homepage reuses the October 17, 2026 Google Play asset package: all four complete
+store screenshots and the Paris/Santorini feature-graphic photos. The WebP copies
+are resized proportionally to 720 px wide without cropping. They are explicitly
+labelled as AI-generated pack previews, not customer results. The sharing image
+is the existing 1024 × 500 Play feature graphic. Fraunces fonts are self-hosted,
+with their original license in `assets/fonts/Fraunces-LICENSE.txt`.
+
+All download buttons point to `com.besties.photo` on Google Play. The displayed
+$3.99 USD pack price is the US listing price; local pricing appears in the app.
+No email collection, tracking service, or additional backend is added.

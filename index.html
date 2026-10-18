@@ -4,50 +4,137 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="index,follow">
+  <meta name="theme-color" content="#15110e">
   <title>BeAnywhere — Your next photoshoot, anywhere.</title>
-  <meta name="description" content="Your next photoshoot, anywhere. Choose your destination and look, then create a personal photoshoot to save and share. Ages 18+.">
+  <meta name="description" content="Turn your selfies into a personal AI photoshoot. Choose your destination and look. 12 photos, 3 reshoots, no subscription. Available now on Android.">
   <link rel="canonical" href="https://beanywhere.app/">
-
-  <meta property="og:title" content="BeAnywhere">
-  <meta property="og:description" content="Your next photoshoot, anywhere.">
+  <meta property="og:title" content="BeAnywhere — Your next photoshoot, anywhere.">
+  <meta property="og:description" content="Your selfies. A whole new setting. Create a personal AI photoshoot with BeAnywhere, now on Google Play.">
   <meta property="og:type" content="website">
-  <meta property="og:url" content="https://beanywhere.app">
-
+  <meta property="og:url" content="https://beanywhere.app/">
+  <meta property="og:image" content="https://beanywhere.app/assets/play-feature.jpg">
+  <meta property="og:image:width" content="1024">
+  <meta property="og:image:height" content="500">
+  <meta property="og:image:alt" content="BeAnywhere: You. Anywhere. Paris and Santorini pack previews. Results vary.">
+  <meta name="twitter:card" content="summary_large_image">
   <link rel="icon" type="image/png" href="/icon.png">
   <link rel="apple-touch-icon" href="/icon.png">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&display=swap" rel="stylesheet">
+  <link rel="preload" href="/assets/fonts/fraunces-semibold.ttf" as="font" type="font/ttf" crossorigin>
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/landing.css">
 </head>
-<body>
-  <main class="hero">
-    <img class="mark" src="/icon.png" alt="BeAnywhere app icon — a figure on a dune at sunset" width="112" height="112">
-    <h1 class="wordmark">BeAnywhere</h1>
-    <p class="tagline">Your next photoshoot, anywhere.</p>
-    <p class="intro">Choose your destination and look, then create a personal photoshoot to save and share.</p>
-
-    <span class="badge">Public launch coming soon</span>
-
-    <p class="follow-prompt">Follow along as we get ready to launch.</p>
-    <nav class="socialrow" aria-label="Follow BeAnywhere">
-      <a href="https://www.instagram.com/beanywhere.app/" rel="me">Instagram</a>
-      <a href="https://www.tiktok.com/@beanywhere.app" rel="me">TikTok</a>
-      <a href="https://www.facebook.com/61591282265008" rel="me">Facebook</a>
-    </nav>
-
-    <nav class="linkrow" aria-label="Site">
-      <a href="/support">Support</a>
-      <a href="/privacy">Privacy</a>
-      <a href="/terms">Terms</a>
-      <a href="mailto:support@beanywhere.app">support@beanywhere.app</a>
-    </nav>
+<body class="landing">
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="landing-header">
+    <div class="landing-wrap header-inner">
+      <a class="brand" href="/" aria-label="BeAnywhere home">
+        <img src="/icon.png" alt="" width="36" height="36">
+        <span class="wordmark">BeAnywhere</span>
+      </a>
+      <nav aria-label="Main">
+        <a class="how-link" href="#how-it-works">How it works</a>
+        <a class="header-download" href="https://play.google.com/store/apps/details?id=com.besties.photo">Get the app <span aria-hidden="true">↗</span></a>
+      </nav>
+    </div>
+  </header>
+  <main id="main">
+    <section class="launch-hero landing-wrap" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <p class="eyebrow"><span class="availability-dot" aria-hidden="true"></span> Now on Android</p>
+        <h1 id="hero-title">Your next<br>photoshoot,<br><em>anywhere.</em></h1>
+        <p class="hero-description">A café in Paris. Golden hour in Santorini.<br class="desktop-break"> Turn your selfies into a personal AI photoshoot, in a place and look you love.</p>
+        <a class="download-button" href="https://play.google.com/store/apps/details?id=com.besties.photo">Get it on Google Play <span aria-hidden="true">↗</span></a>
+        <p class="hero-price">12 photos · $3.99 USD per pack</p>
+        <p class="hero-note">No subscription. No watermark.</p>
+      </div>
+      <div class="hero-visual">
+        <div class="photo-pair">
+          <figure class="photo-print paris-print">
+            <img src="/assets/paris-preview.webp" alt="AI-generated Paris pack preview: a woman on a street near the Eiffel Tower" width="720" height="960" fetchpriority="high">
+            <figcaption>01 <span>Paris</span></figcaption>
+          </figure>
+          <figure class="photo-print santorini-print">
+            <img src="/assets/santorini-preview.webp" alt="AI-generated Santorini pack preview: a man beside a blue dome at sunset" width="720" height="960">
+            <figcaption>02 <span>Santorini</span></figcaption>
+          </figure>
+        </div>
+        <p class="preview-note">AI-generated pack previews. Your results will vary.</p>
+      </div>
+    </section>
+    <section class="how-section landing-wrap" id="how-it-works" aria-labelledby="how-title">
+      <div class="section-heading">
+        <p class="eyebrow">From your camera roll to somewhere new</p>
+        <h2 id="how-title">Your selfies. A whole new setting.</h2>
+      </div>
+      <ol class="steps">
+        <li><span class="step-number" aria-hidden="true">01</span><h3>Pick your photoshoot.</h3><p>Choose a destination and your look. Paris, Santorini, Miami, a night out, and more.</p></li>
+        <li><span class="step-number" aria-hidden="true">02</span><h3>Add 4–6 selfies.</h3><p>Use clear photos of yourself from different angles. BeAnywhere creates your photos with AI.</p></li>
+        <li><span class="step-number" aria-hidden="true">03</span><h3>Make them yours.</h3><p>Get 12 photos across six scenes. Try a reshoot, save your favorites, and share when you want.</p></li>
+      </ol>
+    </section>
+    <section class="app-section" aria-labelledby="app-title">
+      <div class="landing-wrap">
+        <div class="app-heading">
+          <div><p class="eyebrow">Inside BeAnywhere</p><h2 id="app-title">Find your kind of anywhere.</h2></div>
+          <p>Choose women’s or men’s styling.<br> Then find the place that feels like you.</p>
+        </div>
+        <p class="swipe-hint">Swipe to explore <span aria-hidden="true">→</span></p>
+        <div class="screenshots" role="region" aria-label="Four Google Play screenshots; scroll horizontally on mobile" tabindex="0">
+          <img src="/assets/play-01.webp" alt="BeAnywhere Android app showing six photoshoot destinations: Santorini, Paris, Miami, Alpine, Night Out and Elevated Everyday" width="720" height="1280" loading="lazy" decoding="async">
+          <img src="/assets/play-02.webp" alt="Choose women's or men's styling in the BeAnywhere Android app" width="720" height="1280" loading="lazy" decoding="async">
+          <img src="/assets/play-03.webp" alt="Santorini pack preview in the Android app, with Classic and Casual looks, 12 photos and a $3.99 one-time purchase" width="720" height="1280" loading="lazy" decoding="async">
+          <img src="/assets/play-04.webp" alt="Paris pack preview in the Android app, with Parisian chic and Casual looks" width="720" height="1280" loading="lazy" decoding="async">
+        </div>
+        <p class="screenshots-note">In-app pack previews shown. AI-generated images; results vary. In-app purchases.</p>
+      </div>
+    </section>
+    <section class="pack-section landing-wrap" aria-labelledby="pack-title">
+      <div class="pack-copy">
+        <p class="eyebrow">One purchase per photoshoot</p>
+        <h2 id="pack-title">A little escape.<br>A whole pack of you.</h2>
+        <p>Choose a photoshoot whenever you feel like it. Your pack is yours to save and share, with no watermark.</p>
+        <p class="pack-privacy">Your packs aren’t posted publicly. You choose what to share.</p>
+      </div>
+      <div class="pack-offer">
+        <p class="price"><strong>$3.99</strong> <span>USD / pack</span></p>
+        <ul class="pack-includes">
+          <li><strong>12 photos</strong> across six scenes</li>
+          <li><strong>3 reshoots</strong> included</li>
+          <li><strong>No subscription.</strong> Buy a pack when you want.</li>
+        </ul>
+        <a class="download-button" href="https://play.google.com/store/apps/details?id=com.besties.photo">Get it on Google Play <span aria-hidden="true">↗</span></a>
+        <p class="price-note">US price shown. Local pricing appears in the app.</p>
+      </div>
+    </section>
+    <section class="questions-section landing-wrap" aria-labelledby="questions-title">
+      <h2 id="questions-title">Before your first photoshoot.</h2>
+      <div class="questions">
+        <details><summary>What photos should I upload?</summary><p>Add 4–6 clear selfies of yourself, with different angles and good lighting. Use the same person in every photo and follow the guidance in the app. BeAnywhere is for adults 18 and older.</p></details>
+        <details><summary>Are these real travel photos?</summary><p>BeAnywhere creates images with AI using your reference photos. The images on this page are the app’s pack previews, showing the available settings and styles. Your own results will vary.</p></details>
+        <details><summary>Is BeAnywhere available on iPhone?</summary><p>BeAnywhere is available on Android through Google Play. It isn’t available on the App Store yet.</p></details>
+        <details><summary>Can I delete my photos?</summary><p>Yes. In the app, go to Settings → Delete photos &amp; packs. You can also delete your account in Settings. Visit <a href="/support#delete-account">account deletion help</a> or read our <a href="/privacy">Privacy Policy</a> for details.</p></details>
+      </div>
+    </section>
   </main>
-
-  <footer class="site-footer">
-    <div class="wrap">© <span id="yr"></span> Besties,&nbsp;Inc. · 18+ · <a href="/support#delete-account">Delete account</a></div>
+  <footer class="landing-footer">
+    <div class="landing-wrap">
+      <div class="footer-top">
+        <a class="wordmark" href="/">BeAnywhere</a>
+        <nav aria-label="Follow BeAnywhere">
+          <a href="https://www.instagram.com/beanywhere.app/" rel="me">Instagram</a>
+          <a href="https://www.tiktok.com/@beanywhere.app" rel="me">TikTok</a>
+          <a href="https://www.facebook.com/61591282265008" rel="me">Facebook</a>
+        </nav>
+      </div>
+      <div class="footer-bottom">
+        <p>© <span id="yr">2026</span> Besties, Inc. · Ages 18+</p>
+        <nav aria-label="Support and legal">
+          <a href="/support">Support</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/support#delete-account">Delete account</a>
+        </nav>
+        <a class="contact-link" href="mailto:support@beanywhere.app">support@beanywhere.app</a>
+      </div>
+    </div>
   </footer>
-
   <script>document.getElementById('yr').textContent = new Date().getFullYear();</script>
 </body>
 </html>
