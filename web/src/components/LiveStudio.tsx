@@ -24,7 +24,7 @@ export function GalleryRecovery({ email, hasShoots }: { email: string; hasShoots
         <p>Enter the email you used at checkout to open your web galleries.</p>
         <label className="field-label" htmlFor="gallery-email">Checkout email</label>
         <div className="recovery-fields"><input id="gallery-email" type="email" autoComplete="email"
-          required maxLength={254} value={value} onChange={event => setValue(event.target.value)}
+          required maxLength={254} value={value} onChange={event => { setValue(event.target.value); setMessage(""); setError(""); }}
           placeholder="you@example.com" disabled={busy} />
           <button className="button" disabled={busy}>{busy ? "Finding your photos…" : "Find my photos"}</button></div>
         {error && <p className="form-error" role="alert">{error}</p>}
