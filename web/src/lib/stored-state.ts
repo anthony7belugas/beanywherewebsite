@@ -110,6 +110,11 @@ export function decodeStoredState(raw: unknown): StudioState {
     raw.version !== 1 ||
     !styling(raw.preferredStyling) ||
     !text(raw.email) ||
+    (raw.savedSelfies !== undefined && (!record(raw.savedSelfies)
+      || !finite(raw.savedSelfies.savedAt) || typeof raw.savedSelfies.wearsGlasses !== "boolean"
+      || !Array.isArray(raw.savedSelfies.references) || raw.savedSelfies.references.length < 4
+      || raw.savedSelfies.references.length > 6 || !raw.savedSelfies.references.every(reference)
+      || !unique(raw.savedSelfies.references, "id"))) ||
     (raw.draft !== null && !draft(raw.draft)) ||
     !Array.isArray(raw.shoots) ||
     !raw.shoots.every(shoot) ||
@@ -118,6 +123,8 @@ export function decodeStoredState(raw: unknown): StudioState {
   )
     throw new InvalidStoredStateError();
   const state = raw as unknown as StudioState;
+  if (state.savedSelfies && (state.savedSelfies.savedAt > Date.now()
+      || Date.now() - state.savedSelfies.savedAt > 30 * 86400000)) delete state.savedSelfies;
   if (state.draft) state.draft.referenceVersion ??= 0;
   return state;
 }

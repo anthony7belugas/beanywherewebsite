@@ -84,6 +84,7 @@ export interface WebPayments {
   /** The server owns checkout idempotency, prices, and the payment verdict. */
   createCheckout(orderId: string, email: string, attribution?: Acquisition): Promise<WebCheckout>;
   getCheckout(orderId: string): Promise<WebCheckout>;
+  cancelCheckout(orderId: string): Promise<WebCheckout>;
 }
 export type AdapterDependencies = {
   auth: Auth;
@@ -423,6 +424,13 @@ export function createFirebaseAdapter(deps: AdapterDependencies) {
       await ready();
       assertSession();
       const result = await payments.getCheckout(documentId(orderId));
+      assertSession();
+      return validateCheckout(result, orderId);
+    },
+    async cancelWebCheckout(orderId: string) {
+      await ready();
+      assertSession();
+      const result = await payments.cancelCheckout(documentId(orderId));
       assertSession();
       return validateCheckout(result, orderId);
     },

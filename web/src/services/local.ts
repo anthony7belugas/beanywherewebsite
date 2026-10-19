@@ -110,6 +110,7 @@ export class LocalStudioService implements StudioService {
         // Consent belongs to the selected photos; stale preparation must never undo deletion.
         s.draft.referenceVersion++;
         s.draft.consent = false;
+        s.draft.reusedSelfies = false;
       }
     });
   }
@@ -128,9 +129,10 @@ export class LocalStudioService implements StudioService {
         packId,
         styling,
         styleId,
-        references: s.draft?.references || [],
-        wearsGlasses: s.draft?.wearsGlasses || false,
+        references: s.draft?.references || s.savedSelfies?.references || [],
+        wearsGlasses: s.draft?.wearsGlasses ?? s.savedSelfies?.wearsGlasses ?? false,
         consent: s.draft?.consent || false,
+        reusedSelfies: !s.draft && !!s.savedSelfies,
         email: s.draft?.email || s.email,
         checkoutKey: crypto.randomUUID(),
         referenceVersion: 0,
@@ -160,6 +162,7 @@ export class LocalStudioService implements StudioService {
       const shoot = createDemoShoot(checked);
       s.shoots.unshift(shoot);
       s.email = checked.email;
+      s.savedSelfies = { references: checked.references, wearsGlasses: checked.wearsGlasses, savedAt: Date.now() };
       s.draft = null;
       return shoot;
     });
@@ -187,6 +190,7 @@ export class LocalStudioService implements StudioService {
   }
   async clearReferences() {
     await this.mutate((s) => {
+      delete s.savedSelfies;
       if (s.draft) {
         s.draft.references = [];
         s.draft.consent = false;
@@ -199,7 +203,24 @@ export class LocalStudioService implements StudioService {
       s.email = email;
       if (s.draft?.checkoutKey === review.checkoutKey &&
           s.draft.referenceVersion === review.referenceVersion &&
-          s.draft.wearsGlasses === review.wearsGlasses) s.draft = null;
+          s.draft.wearsGlasses === review.wearsGlasses) {
+        if (s.draft.references.length >= 4) s.savedSelfies = {
+          references: s.draft.references, wearsGlasses: s.draft.wearsGlasses, savedAt: Date.now(),
+        };
+        s.draft = null;
+      }
+    });
+  }
+  async reopenCheckout(review: CheckoutReview, email?: string) {
+    await this.mutate(s => {
+      if (!s.draft || s.draft.checkoutKey !== review.checkoutKey
+          || s.draft.referenceVersion !== review.referenceVersion
+          || s.draft.wearsGlasses !== review.wearsGlasses) {
+        throw new Error("Your selfies changed. Review your current shoot before continuing.");
+      }
+      // A cancelled payment gets a new order identity while keeping the customer's selection.
+      s.draft.checkoutKey = crypto.randomUUID();
+      if (email) s.draft.email = email;
     });
   }
   async reset() {

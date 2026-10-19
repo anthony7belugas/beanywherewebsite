@@ -37,7 +37,7 @@ import {
 import { storefrontEntry, withoutStorefrontEntry } from "./lib/storefront-entry";
 import { InvalidStoredStateError } from "./lib/stored-state";
 import { emptyState, validateDraft } from "./lib/domain";
-import { prepareReference, downloadPhotos } from "./lib/media";
+import { prepareReference, preparePhotoDownload, canSharePhotos, type PreparedPhotos } from "./lib/media";
 import type {
   Draft,
   Pack,
@@ -915,6 +915,7 @@ function Upload({
           Back to your shoot
         </a>
         <h1>Add your selfies</h1>
+        {draft.reusedSelfies && <p className="notice">Your previous selfies are ready to use. Keep these or choose new photos below.</p>}
         <p className="mobile-recipe">{pack.title} · {draft.styling === "w" ? "Women’s" : "Men’s"} styling · {pack.styleDirections[draft.styling].find(s => s.id === draft.styleId)?.label}</p>
         <p className="lead">
           Add 4–6 clear photos of the same person.
@@ -1065,7 +1066,7 @@ function Upload({
         <div className="flow-actions">
           <p>
             <LockKeyhole size={14} />
-            {liveMode ? "Saved in this browser until checkout." : "Saved only in this browser."}
+            {liveMode ? "Saved in this browser for your next shoot." : "Saved only in this browser."}
           </p>
           <button
             className="button"
@@ -1109,6 +1110,7 @@ function Checkout({
 }) {
   const [email, setEmail] = useState(draft.email);
   const [busy, setBusy] = useState(false);
+  const [attemptStarted, setAttemptStarted] = useState(false);
   const [error, setError] = useState("");
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -1120,6 +1122,7 @@ function Checkout({
       return;
     }
     setBusy(true);
+    setAttemptStarted(true);
     setError("");
     try {
       const shoot = await service.checkout(draft, checked.email);
@@ -1210,6 +1213,12 @@ function Checkout({
               {error}
             </p>
           )}
+          {error && attemptStarted && service.editCheckout && <button type="button" className="text-button" disabled={busy} onClick={async () => {
+            setBusy(true);
+            try { await service.editCheckout!({ review: draft }); notify("Update your email or selfies, then continue to checkout."); }
+            catch (e) { setError((e as Error).message); }
+            finally { setBusy(false); }
+          }}>Close unpaid checkout and edit</button>}
           <button className="button full" type="submit" disabled={busy}>
             {busy ? (
               <>
@@ -1366,6 +1375,14 @@ function Gallery({
   const [busy, setBusy] = useState(false);
   const photos = shoot.photos.filter((p) => !favorites || p.favorite);
   const done = shoot.photos.filter((p) => p.readyAt <= now);
+  const stopped = !shoot.sample && ["failed", "finished", "paused", "manual-review", "refund-hold"]
+    .some(value => value === shoot.status || value === shoot.generationState);
+  const [preparedPhotos, setPreparedPhotos] = useState<PreparedPhotos | null>(null);
+  const [shareError, setShareError] = useState("");
+  const [sharing, setSharing] = useState(false);
+  const shareAvailable = canSharePhotos();
+  const photoVersions = shoot.photos.map(p => `${p.slotId}:${p.path}:${p.revision}:${p.readyAt}`).join("|");
+  useEffect(() => { setPreparedPhotos(null); }, [photoVersions]);
   const visibleReady = photos.filter((p) => p.readyAt <= now);
   const visibleSelected = selected.filter((id) =>
     photos.some((p) => p.slotId === id),
@@ -1392,7 +1409,7 @@ function Gallery({
     downloadOperation.current = controller;
     setBusy(true);
     try {
-      await downloadPhotos(list, pack.title.replaceAll(" ", "-"), {
+      const prepared = await preparePhotoDownload(list, pack.title.replaceAll(" ", "-"), {
         signal: controller.signal,
         sample: shoot.sample,
         loadPhoto: service.photoBlob ? photo => service.photoBlob!(shoot.id, photo) : undefined,
@@ -1418,7 +1435,12 @@ function Gallery({
             );
         },
       });
-      notify(shoot.sample ? "Sample download prepared." : "Your download is ready.");
+      if (canSharePhotos(prepared.files)) {
+        setLightbox(null); setShareError(""); setPreparedPhotos(prepared);
+      } else {
+        prepared.download();
+        notify(shoot.sample ? "Sample download prepared." : "Your download is ready.");
+      }
     } catch (e) {
       if (!controller.signal.aborted) notify((e as Error).message);
     } finally {
@@ -1442,7 +1464,7 @@ function Gallery({
       <div className="section-heading">
         <div>
           <p className="eyebrow">
-            {done.length < 12
+            {done.length < 12 && !stopped
               ? "YOUR PHOTOS ARE BEING CREATED"
               : "YOUR PHOTOSHOOT"}
           </p>
@@ -1465,7 +1487,7 @@ function Gallery({
           ) : (
             <Download size={17} />
           )}
-          Download{" "}
+          {busy ? "Preparing" : shareAvailable ? "Save" : "Download"}{" "}
           {visibleSelected.length
             ? "selected"
             : favorites
@@ -1480,7 +1502,10 @@ function Gallery({
             ? "Want a different take? Use the reshoot button beneath a photo to create a new version."
             : "You’ve used your included reshoots. Your photos are still here to save."}</p>
       </div>
-      {done.length < 12 && (
+      {!shoot.sample && <p className="order-support">Questions or problems with your order?{" "}
+        <a href={`mailto:support@beanywhere.app?subject=${encodeURIComponent(`Web shoot ${shoot.id}`)}`}>Email support@beanywhere.app</a>.
+      </p>}
+      {done.length < 12 && !stopped && (
         <div className="progress-panel">
           <div>
             <Images size={20} />
@@ -1505,7 +1530,7 @@ function Gallery({
           reshoots reuse the same image.
         </p>
       </div>}
-      {!shoot.sample && ["failed", "finished", "paused", "manual-review", "refund-hold"].some(value => value === shoot.status || value === shoot.generationState) && done.length < 12 && <div className="notice"><Info size={18} /><p>{shoot.generationState === "paused" ? "Generation is temporarily paused." : "Some photos could not be completed."} Your available photos can still be downloaded. <a href={`mailto:support@beanywhere.app?subject=${encodeURIComponent(`Web shoot ${shoot.id}`)}`}>Contact support about this shoot</a>.</p></div>}
+      {stopped && done.length < 12 && <div className="notice"><Info size={18} /><p>{shoot.generationState === "paused" ? "Generation is temporarily paused." : "Some photos could not be completed."}{done.length > 0 && " You can still save your available photos."}</p></div>}
       <div className="gallery-toolbar">
         <div className="filters">
           <button
@@ -1679,6 +1704,27 @@ function Gallery({
           </div>
         </aside>
       )}
+      {preparedPhotos && <Modal title="Save your photos" onClose={() => { if (!sharing) setPreparedPhotos(null); }}>
+        <div className="save-photos-panel">
+          <p>{preparedPhotos.files.length === 1 ? "Your photo is ready." : `Your ${preparedPhotos.files.length} photos are ready.`} Choose where to save or share them.</p>
+          <p className="muted small">On iPhone, choose <strong>Save Image</strong> or <strong>Save Images</strong> to add them to Photos.</p>
+          <button className="button full" disabled={sharing} onClick={async () => {
+            setSharing(true); setShareError("");
+            try {
+              // Invoke directly from this tap: preparation/network work must not consume
+              // the transient user activation required by Safari's native share sheet.
+              await navigator.share({ files: preparedPhotos.files });
+              setPreparedPhotos(null);
+            } catch (e) {
+              if ((e as Error).name !== "AbortError") setShareError("Sharing isn’t available right now. You can download your photos below.");
+            } finally { setSharing(false); }
+          }}>{sharing ? "Opening…" : "Save or share photos"}</button>
+          {shareError && <p className="form-error" role="alert">{shareError}</p>}
+          <button className="text-button" disabled={sharing} onClick={() => { preparedPhotos.download(); setPreparedPhotos(null); }}>
+            {preparedPhotos.files.length === 1 ? "Download photo instead" : "Download ZIP instead"}
+          </button>
+        </div>
+      </Modal>}
       {activePhoto && (
         <Modal
           title={`${activePhoto.label} · Take ${activePhoto.take}`}

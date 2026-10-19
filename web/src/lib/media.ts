@@ -94,12 +94,20 @@ export function saveBlob(blob: Blob, name: string) {
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
-export async function downloadPhotos(
+export type PreparedPhotos = { files: File[]; download: () => void };
+export function canSharePhotos(files?: File[]): boolean {
+  try {
+    return typeof navigator !== "undefined" && typeof navigator.share === "function"
+      && typeof navigator.canShare === "function"
+      && navigator.canShare({ files: files || [new File([new Uint8Array([255, 216, 255])], "photo.jpg", { type: "image/jpeg" })] });
+  } catch { return false; }
+}
+export async function preparePhotoDownload(
   photos: Photo[],
   title: string,
   options: { signal?: AbortSignal; beforeSave?: () => Promise<void>; sample?: boolean;
     loadPhoto?: (photo: Photo) => Promise<Blob> } = {},
-) {
+): Promise<PreparedPhotos> {
   if (!photos.length) throw new Error("Select a finished photo first.");
   const controller = new AbortController();
   const abort = () => controller.abort(options.signal?.reason);
@@ -112,7 +120,7 @@ export async function downloadPhotos(
           "The download took too long. Check your connection and try again.",
         ),
       ),
-    30000,
+    120000,
   );
   const active = () => {
     if (controller.signal.aborted) throw controller.signal.reason;
@@ -120,10 +128,9 @@ export async function downloadPhotos(
   try {
     active();
     const files: Record<string, Uint8Array> = {};
-    let contentType = "image/webp";
     for (const p of photos) {
       if (options.loadPhoto) {
-        const blob = await options.loadPhoto(p);
+        const blob = await photoStep(options.loadPhoto(p), 30000);
         const bytes = new Uint8Array(await blob.arrayBuffer());
         active();
         const jpeg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
@@ -133,7 +140,6 @@ export async function downloadPhotos(
         if (bytes.length < 12 || bytes.length > 20 * 1024 * 1024 || !(jpeg || png || webp)) {
           throw new Error("This photo could not be downloaded. Please try again.");
         }
-        contentType = jpeg ? "image/jpeg" : png ? "image/png" : "image/webp";
         files[`${title}-${p.slotId}.${jpeg ? "jpg" : png ? "png" : "webp"}`] = bytes;
         continue;
       }
@@ -162,20 +168,18 @@ export async function downloadPhotos(
     }
     await options.beforeSave?.();
     active();
-    if (photos.length === 1) {
-      saveBlob(
-        new Blob([Object.values(files)[0] as BlobPart], { type: contentType }),
-        Object.keys(files)[0],
+    const prepared = Object.entries(files).map(([name, bytes]) => new File([bytes as BlobPart], name, {
+      type: name.endsWith(".jpg") ? "image/jpeg" : name.endsWith(".png") ? "image/png" : "image/webp",
+    }));
+    return { files: prepared, download: () => {
+      if (prepared.length === 1) { saveBlob(prepared[0], prepared[0].name); return; }
+      const archive = { ...files };
+      if (options.sample !== false) archive["ABOUT-THESE-SAMPLES.txt"] = strToU8(
+        "BeAnywhere private draft. These are existing marketing preview images, repeated across the 12-photo demo. They were not generated from your uploaded selfies. No payment was taken.",
       );
-      return;
-    }
-    if (options.sample !== false) files["ABOUT-THESE-SAMPLES.txt"] = strToU8(
-      "BeAnywhere private draft. These are existing marketing preview images, repeated across the 12-photo demo. They were not generated from your uploaded selfies. No payment was taken.",
-    );
-    saveBlob(
-      new Blob([zipSync(files) as BlobPart], { type: "application/zip" }),
-      `BeAnywhere-${title}${options.sample === false ? "" : "-samples"}.zip`,
-    );
+      saveBlob(new Blob([zipSync(archive) as BlobPart], { type: "application/zip" }),
+        `BeAnywhere-${title}${options.sample === false ? "" : "-samples"}.zip`);
+    } };
   } catch (error) {
     if (controller.signal.aborted) throw controller.signal.reason;
     throw error;
@@ -183,4 +187,7 @@ export async function downloadPhotos(
     clearTimeout(timer);
     options.signal?.removeEventListener("abort", abort);
   }
+}
+export async function downloadPhotos(...args: Parameters<typeof preparePhotoDownload>) {
+  (await preparePhotoDownload(...args)).download();
 }

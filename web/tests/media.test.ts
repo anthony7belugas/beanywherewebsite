@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
-import { downloadPhotos } from "../src/lib/media";
+import { unzipSync } from "fflate";
+import { downloadPhotos, preparePhotoDownload, canSharePhotos } from "../src/lib/media";
 import type { Photo } from "../src/lib/types";
 const photo: Photo = {
   slotId: "s0",
@@ -70,9 +71,56 @@ describe("sample download failure recovery", () => {
     const result = expect(downloadPhotos([photo], "Paris")).rejects.toThrow(
       "too long",
     );
-    await vi.advanceTimersByTimeAsync(30001);
+    await vi.advanceTimersByTimeAsync(120001);
     await result;
   });
+});
+
+it("prepares individual image files for the native share sheet without saving a ZIP", async () => {
+  const bytes = readFileSync("public/assets/scenes/paris/w/chic/0.webp");
+  const create = vi.fn();
+  vi.stubGlobal("document", { createElement: create });
+  const ready = await preparePhotoDownload([photo, { ...photo, slotId: "s1" }], "Paris", {
+    sample: false, loadPhoto: async () => new Blob([bytes], { type: "image/webp" }),
+  });
+  expect(ready.files.map(file => file.name)).toEqual(["Paris-s0.webp", "Paris-s1.webp"]);
+  expect(ready.files.every(file => file.type === "image/webp" && file.size === bytes.length)).toBe(true);
+  expect(create).not.toHaveBeenCalled();
+  const share = vi.fn();
+  vi.stubGlobal("navigator", { canShare: vi.fn(data => data.files.length <= 12), share });
+  expect(canSharePhotos(ready.files)).toBe(true);
+  expect(share).not.toHaveBeenCalled();
+});
+
+it("falls back when the device rejects image sharing", () => {
+  vi.stubGlobal("navigator", { canShare: () => false, share: vi.fn() });
+  expect(canSharePhotos()).toBe(false);
+});
+
+it("the share-sheet fallback saves a ZIP containing every requested photo", async () => {
+  const bytes = readFileSync("public/assets/scenes/paris/w/chic/0.webp");
+  const anchor = { href: "", download: "", click: vi.fn() };
+  vi.stubGlobal("document", { createElement: () => anchor });
+  let saved!: Blob;
+  vi.spyOn(URL, "createObjectURL").mockImplementation(blob => { saved = blob as Blob; return "blob:download"; });
+  const ready = await preparePhotoDownload(Array.from({ length: 12 }, (_, i) => ({ ...photo, slotId: `s${i}` })), "Paris", {
+    sample: false, loadPhoto: async () => new Blob([bytes], { type: "image/webp" }),
+  });
+  ready.download();
+  const files = unzipSync(new Uint8Array(await saved.arrayBuffer()));
+  expect(Object.keys(files)).toHaveLength(12);
+  expect(Object.keys(files).every(name => name.endsWith(".webp"))).toBe(true);
+  expect(anchor.download).toBe("BeAnywhere-Paris.zip");
+  expect(anchor.click).toHaveBeenCalledOnce();
+});
+
+it("bounds a stalled authorized photo request", async () => {
+  vi.useFakeTimers();
+  const result = expect(preparePhotoDownload([photo], "Paris", {
+    loadPhoto: () => new Promise(() => {}),
+  })).rejects.toThrow("timed out");
+  await vi.advanceTimersByTimeAsync(30001);
+  await result;
 });
 
 it("does not save a downloaded image if the final shoot-access check fails", async () => {

@@ -290,6 +290,39 @@ export class LiveStudioService implements StudioService {
     }
     return result(checkout);
   }
+  async editCheckout(input: { orderId?: string; review?: CheckoutReview }) {
+    this.checkoutAbort?.abort();
+    await this.checkoutInFlight?.catch(() => {});
+    const api = await this.api();
+    const db = await this.database();
+    const key = input.orderId ? await db.get("orders", `${api.session.uid}/${input.orderId}`)
+      : input.review ? `${api.session.uid}/${reviewKey(input.review)}` : null;
+    const attempt: Attempt | undefined = key ? await db.get("attempts", key) : undefined;
+    if (input.orderId && (!attempt || attempt.orderId !== input.orderId)) {
+      throw new Error("Open the original checkout in this browser to edit it.");
+    }
+    if (attempt) {
+      if (attempt.uid !== api.session.uid) throw new Error("This checkout is unavailable.");
+      if (attempt.orderId) {
+        const closed = await api.cancelWebCheckout(attempt.orderId);
+        if (closed.state !== "expired") {
+          throw new Error("This checkout could not be reopened. Check your payment status before paying again.");
+        }
+      }
+      const tx = db.transaction(["attempts", "orders"], "readwrite");
+      const current: Attempt | undefined = await tx.objectStore("attempts").get(attempt.key);
+      if (current?.uploadAttempt !== attempt.uploadAttempt || current.orderId !== attempt.orderId) {
+        await tx.done;
+        throw new Error("Your checkout changed in another tab. Try editing it again.");
+      }
+      await tx.objectStore("attempts").delete(attempt.key);
+      if (attempt.orderId) await tx.objectStore("orders").delete(`${api.session.uid}/${attempt.orderId}`);
+      await tx.done;
+    }
+    const review = attempt?.review || input.review;
+    if (!review) throw new Error("Review your selfies before continuing.");
+    await this.local.reopenCheckout(review, attempt?.email);
+  }
   async setFavorite(shootId: string, slotId: string, favorite: boolean) {
     const api = await this.api();
     if (!this.allJobs().some(job => job.id === shootId && job.slots.some(slot => slot.slotId === slotId))) {

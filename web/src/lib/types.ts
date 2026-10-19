@@ -30,6 +30,7 @@ export type Draft = {
   email: string;
   checkoutKey: string;
   referenceVersion: number;
+  reusedSelfies?: boolean;
 };
 export type DraftGuard = Pick<Draft, "checkoutKey" | "referenceVersion">;
 export type CheckoutReview = DraftGuard & Pick<Draft, "wearsGlasses">;
@@ -70,6 +71,7 @@ export type StudioState = {
   preferredStyling: Styling;
   email: string;
   recoveryEmail?: string;
+  savedSelfies?: { references: Reference[]; wearsGlasses: boolean; savedAt: number };
 };
 export interface StudioService {
   readonly mode: "demo" | "live";
@@ -81,6 +83,7 @@ export interface StudioService {
   setStyling(styling: Styling): Promise<void>;
   checkout(review: CheckoutReview, email: string): Promise<CheckoutResult>;
   payment?(orderId: string): Promise<Extract<CheckoutResult, { kind: "payment" }>>;
+  editCheckout?(input: { orderId?: string; review?: CheckoutReview }): Promise<void>;
   photoBlob?(shootId: string, photo: Photo): Promise<Blob>;
   assertPhotos?(shootId: string, photos: Photo[]): Promise<void>;
   deleteAllPhotos?(): Promise<void>;

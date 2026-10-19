@@ -83,6 +83,7 @@ export function PaymentReturn({ orderId, shoots }: { orderId: string; shoots: St
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
   const [waiting, setWaiting] = useState(true);
+  const [editing, setEditing] = useState(false);
   useEffect(() => {
     let active = true, count = 0;
     let timer: ReturnType<typeof setTimeout>;
@@ -123,7 +124,16 @@ export function PaymentReturn({ orderId, shoots }: { orderId: string; shoots: St
       : checkout?.state === "paid" ? "Your shoot is being prepared. You can return to My photos using your checkout email."
       : "We confirm payment securely before any paid generation starts."}</p>
     {error && <p className="form-error" role="alert">{error}</p>}
-    {checkout?.state === "open" && checkout.url && <a className="button" href={checkout.url}>Continue to secure checkout</a>}
+    {checkout?.state === "open" && checkout.url && !editing && <a className="button" href={checkout.url}>Continue to secure checkout</a>}
+    {checkout?.state === "open" && service.editCheckout && <button className="button secondary" disabled={editing} onClick={async () => {
+      setEditing(true); setError("");
+      try {
+        await service.editCheckout!({ orderId });
+        window.history.replaceState(null, "", `${window.location.pathname}#/checkout`);
+        window.dispatchEvent(new HashChangeEvent("hashchange"));
+      } catch (e) { setError((e as Error).message); setAttempt(n => n + 1); }
+      finally { setEditing(false); }
+    }}>{editing ? "Closing unpaid checkout…" : "Edit email or selfies"}</button>}
     {checkout?.state === "expired" && <a className="button" href="/studio/#/upload">Review selfies and start again</a>}
     {!waiting && <button className="button secondary" onClick={() => setAttempt(n => n + 1)}>Check again</button>}
     <a className="text-button" href="#/library">My photos</a>
@@ -166,8 +176,8 @@ export function LiveAccount({ state, notify }: { state: StudioState; notify: (te
     <p>On another browser, open My photos and enter your checkout email to find your galleries.</p>
     <p><Download size={16} /> {state.shoots.length} photoshoots</p>
     <h3>Your photos</h3>
-    <button className="button secondary full" disabled={busy || !state.draft}
-      onClick={() => void run(() => service.clearReferences(), "Draft selfies removed from this browser.")}>Remove draft selfies</button>
+    <button className="button secondary full" disabled={busy || (!state.draft && !state.savedSelfies)}
+      onClick={() => void run(() => service.clearReferences(), "Saved selfies removed from this browser.")}>Remove saved selfies</button>
     <p>Cloud deletion removes photos created in this browser. For galleries recovered from another browser, contact support to request deletion. Payment records and files you already downloaded are retained.</p>
     {error && <p className="form-error" role="alert">{error}</p>}
     {confirm ? <div className="confirm-clear"><p><strong>Delete photos created in this browser?</strong> This cannot be undone, and it also stops unfinished shoots.</p>

@@ -67,6 +67,9 @@ async function connect(config: StudioFirebaseConfig) {
   const status = httpsCallable<{ orderId: string }, WebCheckout>(
     functions, "getWebCheckoutStatus", { timeout: 25000 },
   );
+  const cancel = httpsCallable<{ orderId: string }, WebCheckout>(
+    functions, "cancelWebCheckout", { timeout: 95000 },
+  );
   return createFirebaseAdapter({
     auth, appCheck, functions, db: getFirestore(app), storage: getStorage(app),
     session: { uid: session.uid, webAppId: session.webAppId, capabilityVersion: 1 },
@@ -74,6 +77,7 @@ async function connect(config: StudioFirebaseConfig) {
     payments: {
       createCheckout: async (orderId, email, attribution) => (await create({ orderId, email, ...(attribution ? { attribution } : {}) })).data,
       getCheckout: async orderId => (await status({ orderId })).data,
+      cancelCheckout: async orderId => (await cancel({ orderId })).data,
     },
   });
 }

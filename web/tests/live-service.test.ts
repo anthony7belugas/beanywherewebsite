@@ -33,6 +33,7 @@ beforeEach(async () => {
     createOrder: vi.fn().mockResolvedValue({ orderId: "order_1" }),
     beginWebCheckout: vi.fn().mockResolvedValue(checkout()),
     reconcileWebCheckout: vi.fn().mockResolvedValue(checkout("paid")),
+    cancelWebCheckout: vi.fn().mockResolvedValue(checkout("expired")),
     reshoot: vi.fn().mockResolvedValue({ operationState: "finished" }),
     reshootStatus: vi.fn().mockResolvedValue({ operationState: "finishing" }),
     download: vi.fn().mockResolvedValue(new Blob(["photo"])), assertPhotos: vi.fn().mockResolvedValue(undefined),
@@ -303,4 +304,70 @@ it("reuses the attribution frozen with a saved checkout after a reload", async (
   await reloaded.checkout(draft, "buyer@example.com");
   expect(api.beginWebCheckout.mock.calls.at(-1)).toEqual(["order_1", "buyer@example.com", attribution]);
   expect(api.uploadReferences).toHaveBeenCalledTimes(1);
+});
+
+it("reuses the last purchased selfies for a new shoot without reusing its payment identity", async () => {
+  await service.checkout(draft, "buyer@example.com");
+  api.reconcileWebCheckout.mockResolvedValue(checkout("fulfilled"));
+  await service.payment("order_1");
+  const reopened = new LiveStudioService(async () => api as API, namespace);
+  await reopened.startDraft("paris", "w", "chic");
+  const next = (await reopened.read()).draft!;
+  expect(next.references).toEqual(draft.references);
+  expect(next.checkoutKey).not.toBe(draft.checkoutKey);
+  expect(next.reusedSelfies).toBe(true);
+  expect(next.consent).toBe(false);
+  expect(next.email).toBe("buyer@example.com");
+});
+
+it("clearing saved selfies cannot be undone by a late fulfilled checkout", async () => {
+  await service.checkout(draft, "buyer@example.com");
+  await service.clearReferences();
+  api.reconcileWebCheckout.mockResolvedValue(checkout("fulfilled"));
+  await service.payment("order_1");
+  expect((await local.read()).savedSelfies).toBeUndefined();
+  await service.startDraft("paris", "w", "chic");
+  expect((await local.read()).draft?.references).toEqual([]);
+});
+
+it("does not reuse selfies more than 30 days after their purchase", async () => {
+  await local.completeCheckout(draft, "buyer@example.com");
+  const db = await openDB(`${namespace}-drafts`);
+  const state = await db.get("studio", "state");
+  state.savedSelfies.savedAt = Date.now() - 31 * 86400000;
+  await db.put("studio", state, "state");
+  await service.startDraft("paris", "w", "chic");
+  expect((await local.read()).draft?.references).toEqual([]);
+});
+
+it("closes the original unpaid checkout before editing and keeps the selfies", async () => {
+  await service.checkout(draft, "typo@example.com");
+  await service.editCheckout({ orderId: "order_1" });
+  expect(api.cancelWebCheckout).toHaveBeenCalledExactlyOnceWith("order_1");
+  const edited = (await local.read()).draft!;
+  expect(edited.checkoutKey).not.toBe(draft.checkoutKey);
+  expect(edited.references).toEqual(draft.references);
+  expect(edited.email).toBe("typo@example.com");
+  api.createOrder.mockResolvedValue({ orderId: "order_2" });
+  api.beginWebCheckout.mockResolvedValue({ ...checkout(), orderId: "order_2" });
+  await service.checkout(edited, "correct@example.com");
+  expect(api.beginWebCheckout.mock.calls.at(-1)).toEqual(["order_2", "correct@example.com", directAttribution()]);
+});
+
+it.each(["paid", "fulfilled", "open"])("does not reopen a checkout when cancellation returns %s", async state => {
+  await service.checkout(draft, "buyer@example.com");
+  api.cancelWebCheckout.mockResolvedValue(checkout(state));
+  await expect(service.editCheckout({ review: draft })).rejects.toThrow("payment status");
+  expect((await local.read()).draft!.checkoutKey).toBe(draft.checkoutKey);
+  const db = await openDB(`${namespace}-operations`);
+  expect(await db.getAll("attempts")).toHaveLength(1);
+});
+
+it("a lost cancellation reply preserves the original checkout until a verified retry", async () => {
+  await service.checkout(draft, "buyer@example.com");
+  api.cancelWebCheckout.mockRejectedValueOnce(new Error("connection lost"));
+  await expect(service.editCheckout({ review: draft })).rejects.toThrow("connection lost");
+  expect((await local.read()).draft!.checkoutKey).toBe(draft.checkoutKey);
+  await service.editCheckout({ review: draft });
+  expect((await local.read()).draft!.checkoutKey).not.toBe(draft.checkoutKey);
 });

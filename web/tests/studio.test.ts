@@ -67,7 +67,7 @@ describe("local checkout and privacy", () => {
     expect(state.shoots[0].photos).toHaveLength(12);
     expect(state.draft).toBeNull();
     expect(state.email).toBe(d.email);
-    expect(JSON.stringify(state)).not.toContain("data:image");
+    expect(state.savedSelfies?.references).toEqual(d.references);
   });
   it("rejects stale checkouts and preserves selected references", async () => {
     const { svc, d } = await prepared();
