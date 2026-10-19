@@ -3,6 +3,37 @@ import { LoaderCircle, Download, ShieldCheck } from "lucide-react";
 import { service } from "../services";
 import type { CheckoutResult, Photo, StudioState } from "../lib/types";
 
+export function GalleryRecovery({ email, hasShoots }: { email: string; hasShoots: boolean }) {
+  const [value, setValue] = useState(email);
+  const [open, setOpen] = useState(!hasShoots);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  return <div className={`gallery-recovery ${hasShoots ? "compact" : ""}`}>
+    {hasShoots && !open ? <button className="text-button" onClick={() => setOpen(true)}>Find photos with your email</button>
+      : <form onSubmit={async event => {
+        event.preventDefault(); if (busy || !service.recoverGalleries) return;
+        setBusy(true); setError(""); setMessage("");
+        try {
+          const count = await service.recoverGalleries(value);
+          setMessage(count ? `Found ${count} ${count === 1 ? "photoshoot" : "photoshoots"}.` : "No web photoshoots found for this email yet. Check the address you used at checkout, or choose a shoot below.");
+        } catch (e) { setError(e instanceof Error ? e.message : "Couldn’t find your photos. Please try again."); }
+        finally { setBusy(false); }
+      }}>
+        <h2>{hasShoots ? "Looking for another shoot?" : "Find your photos"}</h2>
+        <p>Enter the email you used at checkout to open your web galleries.</p>
+        <label className="field-label" htmlFor="gallery-email">Checkout email</label>
+        <div className="recovery-fields"><input id="gallery-email" type="email" autoComplete="email"
+          required maxLength={254} value={value} onChange={event => setValue(event.target.value)}
+          placeholder="you@example.com" disabled={busy} />
+          <button className="button" disabled={busy}>{busy ? "Finding your photos…" : "Find my photos"}</button></div>
+        {error && <p className="form-error" role="alert">{error}</p>}
+        {message && <p className="recovery-message" role="status">{message}</p>}
+        {hasShoots && <button type="button" className="text-button" onClick={() => setOpen(false)}>Close</button>}
+      </form>}
+  </div>;
+}
+
 export function StudioImage({ shootId, photo, alt }: { shootId: string; photo: Photo; alt: string }) {
   const [url, setUrl] = useState("");
   const [error, setError] = useState(false);
@@ -67,7 +98,7 @@ export function PaymentReturn({ orderId, shoots }: { orderId: string; shoots: St
       : checkout?.state === "expired" ? "No new payment can be made with this checkout. Return to your selfies to start again."
       : checkout?.state === "needs-support" ? "Contact support with the order reference below. Please do not pay again while we check it."
       : checkout?.state === "fulfilled" ? "Your gallery will open when it is available. If you already deleted these photos, they cannot be restored. Contact support if your gallery does not appear."
-      : checkout?.state === "paid" ? "Your shoot is being prepared. You can return to My photos in this browser."
+      : checkout?.state === "paid" ? "Your shoot is being prepared. You can return to My photos using your checkout email."
       : "We confirm payment securely before any paid generation starts."}</p>
     {error && <p className="form-error" role="alert">{error}</p>}
     {checkout?.state === "open" && checkout.url && <a className="button" href={checkout.url}>Continue to secure checkout</a>}
@@ -87,10 +118,10 @@ export function LiveInfo({ type }: { type: "help" | "privacy" | "terms" }) {
       <li>Watch your photos arrive in My photos. Processing continues when you close this page, and your completed set is emailed to you automatically.</li>
       <li>Download your favorites. If something needs attention, contact support with your order reference.</li>
     </ol><p>AI results can vary. The collection images show the setting and style, rather than a guaranteed result.</p></>
-      : type === "privacy" ? <><p className="lead">Your studio uses a private browser sign-in.</p>
-        <p>Your browser keeps a secure sign-in so you can return to your photos. We also email your completed set as attachments. Keep that email if you change browsers or clear website data.</p>
+      : type === "privacy" ? <><p className="lead">Your photos, on the web.</p>
+        <p>Your browser remembers your galleries. On another browser, enter your checkout email in My photos to find them. Anyone who knows that email can access those web galleries and use their remaining reshoots. We also email your completed photos as attachments.</p>
         <p>After you continue to checkout, your selfies are uploaded for processing. Firebase stores your studio data, Stripe handles payment, and our AI provider generates your photos.</p>
-        <p>Use My photos → Photo settings to remove draft selfies or request deletion of all your uploaded and generated photos. Downloaded files remain on your device.</p>
+        <p>Use My photos → Photo settings to remove draft selfies or delete photos created in this browser. Contact support to delete a recovered gallery. Downloaded files remain on your device.</p>
         <a href="/privacy.html" target="_blank" rel="noreferrer">Full privacy policy</a></>
       : <><p className="lead">One photoshoot. One payment.</p>
         <p>The checkout shows the final price in USD. BeAnywhere is for adults 18 and older. Upload only photos of yourself, with no other people in them.</p>
@@ -109,19 +140,19 @@ export function LiveAccount({ state, notify }: { state: StudioState; notify: (te
   }
   return <div className="prose">
     <p className="lead">Photo settings</p>
-    <p>{state.email || "Your delivery email is collected at checkout."}</p>
-    <p>This browser signs you in automatically. Keep its website data to return to your paid photos.</p>
-    <p><Download size={16} /> {state.shoots.length} photoshoots in this studio</p>
+    <p>{state.recoveryEmail || state.email || "Your delivery email is collected at checkout."}</p>
+    <p>On another browser, open My photos and enter your checkout email to find your galleries.</p>
+    <p><Download size={16} /> {state.shoots.length} photoshoots</p>
     <h3>Your photos</h3>
     <button className="button secondary full" disabled={busy || !state.draft}
       onClick={() => void run(() => service.clearReferences(), "Draft selfies removed from this browser.")}>Remove draft selfies</button>
-    <p>Deleting cloud photos removes all uploaded and generated photos for this web studio. Payment records and files you already downloaded are retained.</p>
+    <p>Cloud deletion removes photos created in this browser. For galleries recovered from another browser, contact support to request deletion. Payment records and files you already downloaded are retained.</p>
     {error && <p className="form-error" role="alert">{error}</p>}
-    {confirm ? <div className="confirm-clear"><p><strong>Delete all cloud photos?</strong> This cannot be undone, and it also stops unfinished shoots.</p>
+    {confirm ? <div className="confirm-clear"><p><strong>Delete photos created in this browser?</strong> This cannot be undone, and it also stops unfinished shoots.</p>
       <button className="button secondary" disabled={busy} onClick={() => setConfirm(false)}>Keep my photos</button>{" "}
       <button className="button danger" disabled={busy} onClick={() => void run(() => service.deleteAllPhotos!(),
         "Photo deletion requested. It may take a little time to finish.")}>Delete all photos</button></div>
-      : <button className="text-button danger-text" disabled={busy} onClick={() => setConfirm(true)}>Delete all cloud photos</button>}
+      : <button className="text-button danger-text" disabled={busy} onClick={() => setConfirm(true)}>Delete photos created here</button>}
     <p><a href="mailto:support@beanywhere.app">Contact support</a></p>
   </div>;
 }

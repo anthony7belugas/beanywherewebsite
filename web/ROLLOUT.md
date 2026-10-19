@@ -100,3 +100,37 @@ photos and the workflow footer. Mobile shoot pages keep the next action visible.
 Verification: 142 frontend checks, production build, public asset/link checks, and
 manual Chrome desktop/mobile review plus a disconnected upload/review journey.
 No new paid generation or real card transaction was run for this UI refresh.
+
+
+## Email gallery recovery and experience-first storefront — October 19, 2026
+
+The homepage leads with “You, somewhere extraordinary,” shows online creation and
+Google Play together, and explains the four steps beside the offer. The old header
+How it works anchor is replaced by Google Play. My photos presents an email lookup
+when this browser has no shoots, plus a compact lookup option for returning visitors.
+
+Email-only recovery is an explicit product policy: knowledge of the checkout email
+grants access to matching web galleries and their existing reshoot allowance. It
+is not email verification or an authenticated customer account. Do not describe
+these recovered galleries as private or protected by mailbox ownership. The policy
+is disclosed in web privacy and the checkout explains that the email opens galleries.
+
+The server stores a separate recovery selection for the admitted browser. It does
+not change its Firebase identity, migrate ownership, expose reference uploads, or
+grant checkout/deletion privileges. A server-derived email index finds web checkout
+records, including older records backfilled at rollout. Every recovered gallery,
+photo download, and reshoot authorization rechecks the fulfilled payment ledger,
+web app/environment, refund lifecycle and photo deletion state. Native purchases
+are excluded. Existing atomic reshoot claims and allowances remain authoritative.
+Lookup, reads and downloads have separate user/network quotas and App Check.
+
+Recovered images are delivered through a bounded callable with a second access
+check after downloading bytes. No permanent public image URL is generated. Existing
+owner galleries retain their direct Firestore/Storage access and live updates;
+recovered galleries refresh while visible. Multi-page results are loaded without
+losing older purchases. The finished-photo email includes a View my photos link.
+
+Validation: 146 frontend tests plus TypeScript/build; focused backend payment,
+recovery, refund, email and native-isolation checks; SDK-backed reshoot replay and
+zero-allowance tests; account cleanup checks. Public homepage reviewed at desktop,
+375px and 320px. No real-money transaction or new AI generation was used for this change.

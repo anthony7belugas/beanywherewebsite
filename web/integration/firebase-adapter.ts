@@ -54,6 +54,7 @@ export type NativeJobProjection = {
   }[];
   createdAt?: { seconds: number };
 };
+export type GalleryPage = { email: string; jobs: (NativeJobProjection & { id: string })[]; nextCursor: string | null };
 export type UploadSession = {
   sessionId: string;
   fullPaths: string[];
@@ -462,6 +463,22 @@ export function createFirebaseAdapter(deps: AdapterDependencies) {
       );
       if (stopped) stopSnapshot();
       return stop;
+    },
+    recoverGalleries(email: string) {
+      return call<GalleryPage>("recoverWebGalleries", { email });
+    },
+    listWebGalleries(cursor?: string) {
+      return call<GalleryPage>("listWebGalleries", cursor ? { cursor } : {});
+    },
+    async galleryPhoto(jobId: string, path: string) {
+      const result = await call<{ base64: string; contentType: string }>("getWebGalleryPhoto",
+        { jobId: documentId(jobId), path }, 60000);
+      if (result.contentType !== "image/jpeg" || typeof result.base64 !== "string") throw new Error("Photo unavailable.");
+      const bytes = Uint8Array.from(atob(result.base64), c => c.charCodeAt(0));
+      return new Blob([bytes], { type: "image/jpeg" });
+    },
+    async assertGalleryPhotos(jobId: string, paths: string[]) {
+      await call("assertWebGalleryPhotos", { jobId: documentId(jobId), paths });
     },
     async listJobs() {
       await ready();

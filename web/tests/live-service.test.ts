@@ -235,3 +235,56 @@ it("reopening a completed purchase uses the same analytics event ID", async () =
   expect(events[0][2]).toMatch(/^[a-f0-9-]{36}$/);
   expect(events[0][2]).toBe(events[1][2]);
 });
+
+it("recovers galleries from a fresh browser and preserves the checkout identity", async () => {
+  const owner = `w_${"b".repeat(40)}`;
+  const recovered = { ...job(), uid: owner, id: "recovered", slots: [{ ...job().slots[0], path: `outputs/${owner}/recovered/photo.jpg` }], readableOutputPaths: [`outputs/${owner}/recovered/photo.jpg`] };
+  api.listJobs.mockResolvedValue([]);
+  api.listWebGalleries = vi.fn().mockResolvedValue({ email: "", jobs: [], nextCursor: null });
+  api.recoverGalleries = vi.fn().mockResolvedValue({ email: "buyer@example.com", jobs: [recovered], nextCursor: null });
+  api.galleryPhoto = vi.fn().mockResolvedValue(new Blob(["recovered"]));
+  api.assertGalleryPhotos = vi.fn().mockResolvedValue(undefined);
+  await service.read();
+  expect(await service.recoverGalleries(" buyer@example.com ")).toBe(1);
+  const state = await service.read();
+  expect(state.recoveryEmail).toBe("buyer@example.com");
+  expect(state.shoots[0].reshootsLeft).toBe(3);
+  await service.photoBlob("recovered", state.shoots[0].photos[0]);
+  await service.assertPhotos("recovered", state.shoots[0].photos.slice(0, 1));
+  expect(api.galleryPhoto).toHaveBeenCalledWith("recovered", recovered.slots[0].path);
+  expect(api.assertGalleryPhotos).toHaveBeenCalled(); expect(api.download).not.toHaveBeenCalled();
+  expect(api.session.uid).toBe(uid); expect(api.createOrder).not.toHaveBeenCalled();
+});
+
+it("reloads recovered galleries from the server and removes revoked access", async () => {
+  api.listJobs.mockResolvedValue([]);
+  api.listWebGalleries = vi.fn().mockResolvedValue({ email: "buyer@example.com", jobs: [job()], nextCursor: null });
+  expect((await service.read()).shoots).toHaveLength(1);
+  api.listWebGalleries.mockResolvedValue({ email: "buyer@example.com", jobs: [], nextCursor: null });
+  await service.refreshGalleries();
+  expect((await service.read()).shoots).toHaveLength(0);
+  await expect(service.photoBlob("job_1", projectWebJob(job(), {}).photos[0])).rejects.toThrow("unavailable");
+});
+
+it("a stale gallery refresh cannot replace a newer email search", async () => {
+  api.listJobs.mockResolvedValue([]);
+  api.listWebGalleries = vi.fn().mockResolvedValue({ email: "", jobs: [], nextCursor: null });
+  await service.read();
+  let resolve!: (value: unknown) => void;
+  api.listWebGalleries.mockImplementationOnce(() => new Promise(r => { resolve = r; }));
+  const old = service.refreshGalleries(); await Promise.resolve();
+  api.recoverGalleries = vi.fn().mockResolvedValue({ email: "new@example.com", jobs: [], nextCursor: null });
+  await service.recoverGalleries("new@example.com");
+  resolve({ email: "old@example.com", jobs: [job()], nextCursor: null }); await old;
+  const state = await service.read(); expect(state.recoveryEmail).toBe("new@example.com"); expect(state.shoots).toHaveLength(0);
+});
+
+it("reads all recovery pages and deduplicates galleries already owned by this browser", async () => {
+  api.listWebGalleries = vi.fn().mockImplementation(async (cursor?: string) => cursor
+    ? { email: "buyer@example.com", jobs: [{ ...job(), id: "second" }], nextCursor: null }
+    : { email: "", jobs: [], nextCursor: null });
+  await service.read();
+  api.recoverGalleries = vi.fn().mockResolvedValue({ email: "buyer@example.com", jobs: [job()], nextCursor: "page2" });
+  await service.recoverGalleries("buyer@example.com");
+  expect((await service.read()).shoots.map(s => s.id).sort()).toEqual(["job_1", "second"]);
+});

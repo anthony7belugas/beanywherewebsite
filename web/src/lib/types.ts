@@ -69,6 +69,7 @@ export type StudioState = {
   shoots: Shoot[];
   preferredStyling: Styling;
   email: string;
+  recoveryEmail?: string;
 };
 export interface StudioService {
   readonly mode: "demo" | "live";
@@ -83,6 +84,8 @@ export interface StudioService {
   photoBlob?(shootId: string, photo: Photo): Promise<Blob>;
   assertPhotos?(shootId: string, photos: Photo[]): Promise<void>;
   deleteAllPhotos?(): Promise<void>;
+  recoverGalleries?(email: string): Promise<number>;
+  refreshGalleries?(): Promise<void>;
   setFavorite(
     shootId: string,
     slotId: string,

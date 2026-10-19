@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import { service, liveMode } from "./services";
 import { studioRouteEvent } from "../integration/studio-events";
-import { LiveAccount, LiveInfo, PaymentReturn, StudioImage } from "./components/LiveStudio";
+import { LiveAccount, LiveInfo, PaymentReturn, StudioImage, GalleryRecovery } from "./components/LiveStudio";
 import {
   packs,
   packById,
@@ -74,6 +74,7 @@ export default function App() {
   const [toast, setToast] = useState("");
   const [now, setNow] = useState(Date.now());
   const [offline, setOffline] = useState(!navigator.onLine);
+  const [galleryError, setGalleryError] = useState("");
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const main = useRef<HTMLElement>(null);
   const notify = useCallback((message: string) => {
@@ -159,6 +160,24 @@ export default function App() {
     const t = setInterval(() => setNow(Date.now()), 500);
     return () => clearInterval(t);
   }, []);
+  useEffect(() => {
+    if (!liveMode || !loaded || !(path === "/library" || path.startsWith("/gallery/"))) return;
+    let alive = true, running = false;
+    const refresh = async () => {
+      if (running || document.hidden) return;
+      running = true;
+      try {
+        await service.refreshGalleries?.();
+        const next = await service.read();
+        if (alive) { setState(next); setGalleryError(""); }
+      } catch { if (alive) setGalleryError("Couldn’t refresh your photos. Check your connection and try again."); }
+      finally { running = false; }
+    };
+    const timer = setInterval(() => void refresh(), 15000);
+    const focus = () => void refresh();
+    window.addEventListener("focus", focus);
+    return () => { alive = false; clearInterval(timer); window.removeEventListener("focus", focus); };
+  }, [path, loaded]);
   useEffect(() => {
     const update = () => setOffline(!navigator.onLine);
     window.addEventListener("online", update);
@@ -275,8 +294,7 @@ export default function App() {
         <div className="shell header-inner">
           <a className="wordmark" href={liveMode ? "/" : "#/"} aria-label="BeAnywhere home">BeAnywhere</a>
           <nav aria-label="Main navigation">
-            <a className="how-link" href={liveMode ? "/#how-it-works" : "#destinations"}
-              onClick={liveMode ? undefined : e => { e.preventDefault(); setDialog("help"); }}>How it works</a>
+            <a className="android-link" href="https://play.google.com/store/apps/details?id=com.besties.photo">Google Play ↗</a>
             <a className={path === "/library" || path.startsWith("/gallery/") ? "active" : ""} href="#/library">
               My photos{state.shoots.length > 0 && <span className="count">{state.shoots.length}</span>}
             </a>
@@ -365,7 +383,8 @@ export default function App() {
               body="Find your completed shoots in My photos, or start a new one."
             />
           ))}
-        {path === "/library" && <Library shoots={state.shoots} now={now} onSettings={() => setDialog("account")} />}
+        {galleryError && (path === "/library" || path.startsWith("/gallery/")) && <p className="notice" role="status">{galleryError}</p>}
+        {path === "/library" && <Library shoots={state.shoots} email={state.recoveryEmail || state.email} now={now} onSettings={() => setDialog("account")} />}
         {currentShoot && (
           <Gallery
             key={currentShoot.id}
@@ -380,7 +399,7 @@ export default function App() {
           !currentShoot && (
             <Empty
               title="This page has moved on."
-              body="This shoot may have been removed from your browser. Explore a new destination or check My photos."
+              body="Open My photos and enter your checkout email to find your galleries. Deleted or refunded shoots are no longer available."
             />
           )}
       </main>
@@ -1142,7 +1161,7 @@ function Checkout({
             maxLength={254}
           />
           <p id="email-note" className="input-note">
-            {liveMode ? "We’ll automatically email your completed photos here. No Google login is needed." : "Saved locally for this demo. No account is created and no email is sent."}
+            {liveMode ? "We’ll email your finished photos here. This email also opens your web galleries in My photos—keep it handy." : "Saved locally for this demo. No account is created and no email is sent."}
           </p>
           <div className="payment-preview">
             <div className="payment-title">
@@ -1206,7 +1225,7 @@ function Checkout({
   );
 }
 
-function Library({ shoots, now, onSettings }: { shoots: Shoot[]; now: number; onSettings: () => void }) {
+function Library({ shoots, email, now, onSettings }: { shoots: Shoot[]; email: string; now: number; onSettings: () => void }) {
   const [filter, setFilter] = useState("All shoots");
   const filtered = shoots.filter(
     (s) => filter === "All shoots" || s.photos.some((p) => p.favorite),
@@ -1221,8 +1240,9 @@ function Library({ shoots, now, onSettings }: { shoots: Shoot[]; now: number; on
           New photoshoot
         </a>
       </div>
-      <div className="library-guidance"><p>{liveMode ? "Your shoots in this browser. Finished photos are also emailed to you as attachments." : "Your saved sample photoshoots in this browser."}</p><button className="text-button" onClick={onSettings}>Photo settings</button></div>
-      <div className="library-toolbar">
+      <div className="library-guidance"><p>{liveMode ? "Your photoshoots, all in one place. Open a gallery to download photos or use a reshoot." : "Your saved sample photoshoots in this browser."}</p></div>
+      {liveMode && <GalleryRecovery email={email} hasShoots={shoots.length > 0} />}
+      {shoots.length > 0 && <div className="library-toolbar">
         <div className="filters">
           {["All shoots", "With favorites"].map((f) => (
             <button
@@ -1239,7 +1259,7 @@ function Library({ shoots, now, onSettings }: { shoots: Shoot[]; now: number; on
           {filtered.length}{" "}
           {filtered.length === 1 ? "photoshoot" : "photoshoots"}
         </span>
-      </div>
+      </div>}
       {filtered.length ? (
         <div className="pack-grid">
           {filtered.map((shoot) => {
@@ -1286,7 +1306,7 @@ function Library({ shoots, now, onSettings }: { shoots: Shoot[]; now: number; on
             );
           })}
         </div>
-      ) : (
+      ) : !liveMode || shoots.length > 0 ? (
         <Empty
           icon={<Images size={36} strokeWidth={1} />}
           title={
@@ -1300,7 +1320,8 @@ function Library({ shoots, now, onSettings }: { shoots: Shoot[]; now: number; on
               : "Tap the heart on a photo to add it to your favorites."
           }
         />
-      )}
+      ) : <div className="new-shoot-prompt"><p>Your next setting is waiting.</p><a className="text-button" href={homeHref}>Choose a photoshoot →</a></div>}
+      <div className="library-settings"><button className="text-button" onClick={onSettings}>Photo settings</button><a href="mailto:support@beanywhere.app">Get help</a></div>
       <p className="preview-caption">
         {liveMode ? "Your web photos are separate from purchases in the mobile app." : "Private draft · Sample shoots are saved to this browser only."}
       </p>
@@ -1404,7 +1425,7 @@ function Gallery({
         <div>
           <p className="eyebrow">
             {done.length < 12
-              ? "A LITTLE MAGIC IN PROGRESS"
+              ? "YOUR PHOTOS ARE BEING CREATED"
               : "YOUR PHOTOSHOOT"}
           </p>
           <h1>
@@ -1438,7 +1459,7 @@ function Gallery({
         <div className="progress-panel">
           <div>
             <Images size={20} />
-            <span>Finding the light. Framing the moment.</span>
+            <span>Your photos are being created.</span>
             <strong>{Math.round((done.length / 12) * 100)}%</strong>
           </div>
           <progress
@@ -1447,7 +1468,7 @@ function Gallery({
             aria-label={shoot.sample ? "Demo photos completed" : "Photos completed"}
           />
           <p>
-            {shoot.sample ? "You can leave this page and return to My photos. Your demo progress is saved." : "Processing continues if you close this page. Return to My photos in this browser to check your shoot."}
+            {shoot.sample ? "You can leave this page and return to My photos. Your demo progress is saved." : "You can close this page. We’ll email your finished photos. Return anytime through My photos using your checkout email."}
           </p>
         </div>
       )}

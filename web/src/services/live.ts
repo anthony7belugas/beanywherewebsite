@@ -3,7 +3,7 @@ import { LocalStudioService } from "./local";
 import { packById } from "../lib/catalog";
 import { validateDraft } from "../lib/domain";
 import type { CheckoutReview, Draft, DraftGuard, DraftUpdate, Photo, Shoot, StudioService, Styling } from "../lib/types";
-import type { createFirebaseAdapter, NativeJobProjection, ReshootOperation, WebCheckout } from "../../integration/firebase-adapter";
+import type { createFirebaseAdapter, NativeJobProjection, ReshootOperation, WebCheckout, GalleryPage } from "../../integration/firebase-adapter";
 
 type API = ReturnType<typeof createFirebaseAdapter>;
 type Attempt = {
@@ -57,6 +57,14 @@ export class LiveStudioService implements StudioService {
   private db?: ReturnType<typeof openDB>;
   private listeners = new Set<() => void>();
   private jobs: (NativeJobProjection & { id: string })[] = [];
+  private recoveredJobs: (NativeJobProjection & { id: string })[] = [];
+  private recoveryEmail = "";
+  private recoveryEpoch = 0;
+  private galleryRefresh?: Promise<void>;
+  private allJobs() {
+    return [...new Map([...this.recoveredJobs, ...this.jobs].map(job => [job.id, job])).values()]
+      .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+  }
   private favorites: Record<string, boolean> = {};
   private watchError: Error | null = null;
   private watching?: Promise<void>;
@@ -84,6 +92,7 @@ export class LiveStudioService implements StudioService {
       this.favorites = (await (await this.database()).get("favorites", api.session.uid)) || {};
       // Initial server read lets permission/index failures reach the UI rather than an empty gallery.
       this.jobs = await api.listJobs();
+      await this.refreshGalleries();
       await api.watchJobs(jobs => { this.jobs = jobs; this.watchError = null; this.changed(); },
         error => { this.jobs = []; this.watchError = error; this.changed(); });
     })().catch(error => { this.watching = undefined; throw error; });
@@ -94,8 +103,48 @@ export class LiveStudioService implements StudioService {
     if (this.watchError) throw this.watchError;
     const api = await this.api();
     this.favorites = (await (await this.database()).get("favorites", api.session.uid)) || {};
-    return { ...state, shoots: this.jobs.filter(job => !!packById(job.packId))
+    return { ...state, recoveryEmail: this.recoveryEmail, shoots: this.allJobs().filter(job => !!packById(job.packId))
       .map(job => projectWebJob(job, this.favorites)) };
+  }
+  private async galleryPages(first: GalleryPage) {
+    const api = await this.api();
+    const jobs = [...first.jobs];
+    let cursor = first.nextCursor;
+    const seen = new Set<string>();
+    while (cursor) {
+      if (seen.has(cursor) || seen.size >= 100) throw new Error("Please contact support to load the rest of your galleries.");
+      seen.add(cursor);
+      const page = await api.listWebGalleries(cursor);
+      if (page.email !== first.email) throw new Error("Your gallery email changed. Try finding your photos again.");
+      jobs.push(...page.jobs); cursor = page.nextCursor;
+    }
+    return { email: first.email, jobs };
+  }
+  async recoverGalleries(email: string) {
+    const epoch = ++this.recoveryEpoch;
+    this.recoveredJobs = []; this.recoveryEmail = ""; this.changed();
+    const result = await this.galleryPages(await (await this.api()).recoverGalleries(email.trim()));
+    if (epoch !== this.recoveryEpoch) throw new Error("Your gallery search changed. Try again.");
+    this.recoveredJobs = result.jobs; this.recoveryEmail = result.email; this.changed();
+    this.track("library_viewed", { count: result.jobs.length, restored: true });
+    return result.jobs.length;
+  }
+  refreshGalleries() {
+    if (this.galleryRefresh) return this.galleryRefresh;
+    const epoch = this.recoveryEpoch;
+    return this.galleryRefresh = (async () => {
+      const api = await this.api();
+      // Optional for legacy adapters; the deployed web adapter always provides this.
+      if (!api.listWebGalleries) return;
+      const result = await this.galleryPages(await api.listWebGalleries());
+      if (epoch !== this.recoveryEpoch) return;
+      this.recoveredJobs = result.jobs; this.recoveryEmail = result.email;
+    })().catch(error => {
+      if (epoch === this.recoveryEpoch && this.recoveredJobs.length) {
+        this.recoveredJobs = []; this.changed();
+      }
+      throw error;
+    }).finally(() => { this.galleryRefresh = undefined; });
   }
   updateDraft(review: DraftGuard, patch: DraftUpdate) {
     if (patch.references || patch.wearsGlasses !== undefined || patch.consent === false) this.checkoutAbort?.abort();
@@ -242,7 +291,7 @@ export class LiveStudioService implements StudioService {
   }
   async setFavorite(shootId: string, slotId: string, favorite: boolean) {
     const api = await this.api();
-    if (!this.jobs.some(job => job.id === shootId && job.slots.some(slot => slot.slotId === slotId))) {
+    if (!this.allJobs().some(job => job.id === shootId && job.slots.some(slot => slot.slotId === slotId))) {
       throw new Error("This photo is unavailable.");
     }
     const tx = (await this.database()).transaction("favorites", "readwrite");
@@ -253,7 +302,7 @@ export class LiveStudioService implements StudioService {
   }
   async reshoot(shootId: string, slotId: string, operationId: string) {
     const api = await this.api();
-    const slot = this.jobs.find(job => job.id === shootId)?.slots.find(value => value.slotId === slotId);
+    const slot = this.allJobs().find(job => job.id === shootId)?.slots.find(value => value.slotId === slotId);
     if (!slot?.path || slot.status !== "done") throw new Error("Wait for this photo to finish.");
     const db = await this.database();
     const key = `${api.session.uid}/${shootId}/${slotId}`;
@@ -282,15 +331,25 @@ export class LiveStudioService implements StudioService {
     if (["rolled-back", "not-started", "closed"].includes(outcome.operationState || "")) {
       throw new Error("That reshoot did not finish. Your photos are unchanged; try again or contact support.");
     }
+    await this.refreshGalleries(); this.changed();
   }
   async photoBlob(shootId: string, photo: Photo) {
     if (!photo.path) throw new Error("This photo is still being prepared.");
-    return (await this.api()).download(shootId, photo.path);
+    await this.startWatching();
+    const api = await this.api();
+    const job = this.allJobs().find(job => job.id === shootId);
+    if (!job) throw new Error("This gallery is unavailable.");
+    return job.uid === api.session.uid ? api.download(shootId, photo.path) : api.galleryPhoto(shootId, photo.path);
   }
   async assertPhotos(shootId: string, photos: Photo[]) {
-    return (await this.api()).assertPhotos(shootId, photos.map(photo => photo.path || ""));
+    await this.startWatching();
+    const api = await this.api();
+    const job = this.allJobs().find(job => job.id === shootId);
+    if (!job) throw new Error("This gallery is unavailable.");
+    const paths = photos.map(photo => photo.path || "");
+    return job.uid === api.session.uid ? api.assertPhotos(shootId, paths) : api.assertGalleryPhotos(shootId, paths);
   }
-  async deleteShoot() { throw new Error("Use My studio to delete all your photos, or contact support about a single shoot."); }
+  async deleteShoot() { throw new Error("Use My photos → Photo settings to delete all your photos created in this browser, or contact support about a recovered shoot."); }
   async deleteAllPhotos() {
     this.checkoutAbort?.abort();
     await (await this.api()).deleteAllPhotos();
