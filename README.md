@@ -73,3 +73,7 @@ with their original license in `assets/fonts/Fraunces-LICENSE.txt`.
 All download buttons point to `com.besties.photo` on Google Play. The displayed
 $3.99 USD pack price is the US listing price; local pricing appears in the app.
 No email collection, tracking service, or additional backend is added.
+
+When changing `landing.css`, update the `?v=` value in the homepage stylesheet
+link to the first 10 characters of the file's SHA-256. This makes returning
+visitors load the updated stylesheet instead of a still-fresh cached copy.
