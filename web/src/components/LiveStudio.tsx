@@ -3,7 +3,7 @@ import { LoaderCircle, Download, ShieldCheck } from "lucide-react";
 import { service } from "../services";
 import type { CheckoutResult, Photo, StudioState } from "../lib/types";
 
-export function GalleryRecovery({ email, hasShoots, onRecovered }: { email: string; hasShoots: boolean; onRecovered: () => void }) {
+export function GalleryRecovery({ email, hasShoots, onRecovered, targetShootId }: { email: string; hasShoots: boolean; onRecovered: () => void; targetShootId?: string }) {
   // Suggest the saved email once; background refreshes must not overwrite edits.
   const [value, setValue] = useState(email);
   const input = useRef<HTMLInputElement>(null);
@@ -26,13 +26,16 @@ export function GalleryRecovery({ email, hasShoots, onRecovered }: { email: stri
         setBusy(true); setError(""); setMessage("");
         try {
           const count = await service.recoverGalleries(email);
+          const foundTarget = targetShootId ? (await service.read()).shoots.some(shoot => shoot.id === targetShootId) : false;
           onRecovered();
-          setMessage(count ? `Found ${count} ${count === 1 ? "photoshoot" : "photoshoots"}. Open a gallery below.` : "No web photoshoots found. Check that this is the email you used to pay on this website.");
+          setMessage(targetShootId
+            ? foundTarget ? "Opening your photos…" : "This shoot wasn’t found for that email. Check the email you used to pay, or open My photos to see your other shoots. Deleted or refunded shoots are no longer available."
+            : count ? `Found ${count} ${count === 1 ? "photoshoot" : "photoshoots"}. Open a gallery below.` : "No web photoshoots found. Check that this is the email you used to pay on this website.");
         } catch (e) { setError(e instanceof Error ? e.message : "Couldn’t find your photos. Please try again."); }
         finally { setBusy(false); }
       }}>
-        <h2>{hasShoots ? "Looking for another shoot?" : "Find your photos"}</h2>
-        <p id="gallery-email-note">Enter the email you used at checkout to open your web galleries.</p>
+        <h2>{targetShootId ? "Open this shoot" : hasShoots ? "Looking for another shoot?" : "Find your photos"}</h2>
+        <p id="gallery-email-note">{targetShootId ? "Enter your checkout email. We’ll take you straight to this shoot." : "Enter the email you used at checkout to open your web galleries."}</p>
         <label className="field-label" htmlFor="gallery-email">Checkout email</label>
         <div className="recovery-fields">
           <div className="recovery-email">
@@ -44,7 +47,7 @@ export function GalleryRecovery({ email, hasShoots, onRecovered }: { email: stri
             {value && <button type="button" className="clear-email" aria-label="Clear email" disabled={busy}
               onClick={() => { edit(""); input.current?.focus(); }}>Clear</button>}
           </div>
-          <button type="submit" className="button" disabled={busy}>{busy ? "Finding your photos…" : "Find my photos"}</button>
+          <button type="submit" className="button" disabled={busy}>{busy ? "Finding your photos…" : targetShootId ? "View my photos" : "Find my photos"}</button>
         </div>
         {error && <p id="gallery-email-error" className="form-error" role="alert">{error}</p>}
         {message && <p className="recovery-message" role="status">{message}</p>}

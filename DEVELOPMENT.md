@@ -13,3 +13,5 @@ Example tracked link:
 `https://beanywhere.app/?utm_source=instagram&utm_medium=social&utm_campaign=launch&utm_content=reel_03&source_code=ig03`
 
 Use a different `utm_content` or `source_code` for each placement. Confirmed sales appear in the owner dashboard under **Web sales by source**, separately from mobile sales. Untracked traffic remains direct; old purchases do not gain invented source labels.
+
+Delivery emails link to `/studio/#/gallery/{jobId}`. The gallery route preserves that destination through checkout-email recovery on another browser. Completed galleries keep downloads and favorites prominent, explain the included reshoots, and show one next-shoot suggestion below the photos, preferring a setting absent from the loaded library. Incomplete galleries do not show the suggestion.

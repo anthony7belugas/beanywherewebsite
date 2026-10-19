@@ -32,6 +32,7 @@ import {
   cover,
   sceneImage,
   location,
+  nextPack,
 } from "./lib/catalog";
 import { storefrontEntry, withoutStorefrontEntry } from "./lib/storefront-entry";
 import { InvalidStoredStateError } from "./lib/stored-state";
@@ -263,8 +264,9 @@ export default function App() {
   const currentPack = path.startsWith("/shoot/")
     ? packById(path.split("/")[2])
     : null;
-  const currentShoot = path.startsWith("/gallery/")
-    ? state.shoots.find((j) => j.id === path.split("/")[2])
+  const requestedShootId = /^\/gallery\/([A-Za-z0-9_-]{1,128})$/.exec(path)?.[1];
+  const currentShoot = requestedShootId
+    ? state.shoots.find((j) => j.id === requestedShootId)
     : null;
   const steps =
     path === "/upload" || path === "/checkout" || path.startsWith("/gallery/");
@@ -389,14 +391,25 @@ export default function App() {
           <Gallery
             key={currentShoot.id}
             shoot={currentShoot}
+            ownedPackIds={state.shoots.map(shoot => shoot.packId)}
             now={now}
             notify={notify}
             handle={handle}
           />
         )}
+        {liveMode && requestedShootId && !currentShoot && (
+          <section className="shoot-recovery">
+            <a className="back-link" href="#/library"><ArrowLeft size={15} />My photos</a>
+            <p className="eyebrow">YOUR PERSONAL GALLERY</p>
+            <h1>Your photos, <em>right here.</em></h1>
+            <GalleryRecovery key={requestedShootId} email={state.recoveryEmail || state.email} hasShoots={false}
+              targetShootId={requestedShootId} onRecovered={() => {}} />
+            <p className="muted small">Your delivery email also has your photos attached, ready to save.</p>
+          </section>
+        )}
         {!paymentRoute && !["/", "/upload", "/checkout", "/library"].includes(path) &&
           !currentPack &&
-          !currentShoot && (
+          !currentShoot && !(liveMode && requestedShootId) && (
             <Empty
               title="This page has moved on."
               body="Open My photos and enter your checkout email to find your galleries. Deleted or refunded shoots are no longer available."
@@ -1333,16 +1346,19 @@ function Library({ shoots, email, now, onSettings }: { shoots: Shoot[]; email: s
 
 function Gallery({
   shoot,
+  ownedPackIds,
   now,
   notify,
   handle,
 }: {
   shoot: Shoot;
+  ownedPackIds: string[];
   now: number;
   notify: (s: string) => void;
   handle: (fn: () => Promise<unknown>) => Promise<void>;
 }) {
   const pack = packById(shoot.packId)!;
+  const suggested = nextPack(shoot.packId, ownedPackIds);
   const [favorites, setFavorites] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [lightbox, setLightbox] = useState<string | null>(null);
@@ -1456,6 +1472,13 @@ function Gallery({
               ? "favorites"
               : "all"}
         </button>
+      </div>
+      <div className="reshoot-guide">
+        <RotateCcw size={19} aria-hidden="true" />
+        <p><strong>3 individual reshoots included.</strong>{" "}
+          {shoot.reshootsLeft > 0
+            ? "Want a different take? Use the reshoot button beneath a photo to create a new version."
+            : "You’ve used your included reshoots. Your photos are still here to save."}</p>
       </div>
       {done.length < 12 && (
         <div className="progress-panel">
@@ -1642,15 +1665,20 @@ function Gallery({
           </button>
         </div>
       )}
-      <div className="gallery-bottom">
-        <div>
-          <h3>Another setting. Another side of you.</h3>
-          <p>Explore somewhere new whenever the mood strikes.</p>
-        </div>
-        <a className="button secondary" href={homeHref}>
-          Find my next shoot <ArrowRight size={17} />
-        </a>
-      </div>
+      {done.length === 12 && suggested && !["failed", "refunded"].includes(shoot.status || "") && shoot.generationState !== "refund-hold" && (
+        <aside className="gallery-bottom" aria-label="Your next photoshoot">
+          <img className="next-shoot-cover" src={cover(suggested.packId, shoot.styling)} alt={`${suggested.title} photoshoot preview`} loading="lazy" />
+          <div className="next-shoot-copy">
+            <p className="eyebrow">WHEN YOU’RE READY</p>
+            <h2>Next, {suggested.title}.</h2>
+            <p>Another setting. Another side of you.</p>
+            <p className="next-shoot-price">{money} USD · 12 new photos · 3 reshoots included</p>
+            <a className="button secondary" href={liveMode ? `/shoots/${suggested.packId}/?styling=${shoot.styling}` : `#/shoot/${suggested.packId}`}>
+              Explore {suggested.title} <ArrowRight size={17} />
+            </a>
+          </div>
+        </aside>
+      )}
       {activePhoto && (
         <Modal
           title={`${activePhoto.label} · Take ${activePhoto.take}`}
