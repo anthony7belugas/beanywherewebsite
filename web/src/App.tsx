@@ -37,6 +37,7 @@ import {
 import { storefrontEntry, withoutStorefrontEntry } from "./lib/storefront-entry";
 import { InvalidStoredStateError } from "./lib/stored-state";
 import { emptyState, validateDraft } from "./lib/domain";
+import { galleryState } from "./lib/gallery-state";
 import { prepareReference, preparePhotoDownload, canSharePhotos, type PreparedPhotos } from "./lib/media";
 import type {
   Draft,
@@ -1376,8 +1377,9 @@ function Gallery({
   const [busy, setBusy] = useState(false);
   const photos = shoot.photos.filter((p) => !favorites || p.favorite);
   const done = shoot.photos.filter((p) => p.readyAt <= now);
-  const stopped = !shoot.sample && ["failed", "finished", "paused", "manual-review", "refund-hold"]
-    .some(value => value === shoot.status || value === shoot.generationState);
+  const { reshooting, stopped, reshootUnavailable } = galleryState(shoot, now);
+  const [reshootPending, setReshootPending] = useState(false);
+  const reshootRequest = useRef(false);
   const [preparedPhotos, setPreparedPhotos] = useState<PreparedPhotos | null>(null);
   const [shareError, setShareError] = useState("");
   const [sharing, setSharing] = useState(false);
@@ -1465,7 +1467,7 @@ function Gallery({
       <div className="section-heading">
         <div>
           <p className="eyebrow">
-            {done.length < 12 && !stopped
+            {reshooting ? "YOUR RESHOOT IS BEING CREATED" : done.length < 12 && !stopped
               ? "YOUR PHOTOS ARE BEING CREATED"
               : "YOUR PHOTOSHOOT"}
           </p>
@@ -1473,9 +1475,9 @@ function Gallery({
             {pack.title}, <em>with you.</em>
           </h1>
           <p className="lead">
-            {done.length < 12
+            {reshooting ? `Reshooting ${reshooting} ${reshooting === 1 ? "photo" : "photos"} · ${done.length} of 12 ready` : done.length < 12
               ? `${shoot.sample ? "Developing your demo" : shoot.generationState === "finished" ? "Shoot finished" : shoot.status === "failed" ? "This shoot needs attention" : "Preparing your photos"} · ${done.length} of 12 ready`
-              : `${shoot.sample ? "12 sample photo slots" : "12 photos ready"} · ${shoot.reshootsLeft} reshoots left`}
+              : `${shoot.sample ? "12 sample photo slots" : "12 photos ready"}${reshootUnavailable ? "" : ` · ${shoot.reshootsLeft} reshoots left`}`}
           </p>
         </div>
         <button
@@ -1499,14 +1501,14 @@ function Gallery({
       <div className="reshoot-guide">
         <RotateCcw size={19} aria-hidden="true" />
         <p><strong>3 individual reshoots included.</strong>{" "}
-          {shoot.reshootsLeft > 0
-            ? "Want a different take? Use the reshoot button beneath a photo to create a new version."
-            : "You’ve used your included reshoots. Your photos are still here to save."}</p>
+          {reshootPending && !reshooting ? "Checking your reshoot request…" : reshootUnavailable ||
+            "Want a different take? Use the reshoot button beneath a photo to create a new version."}</p>
       </div>
       {!shoot.sample && <p className="order-support">Questions or problems with your order?{" "}
         <a href={`mailto:support@beanywhere.app?subject=${encodeURIComponent(`Web shoot ${shoot.id}`)}`}>Email support@beanywhere.app</a>.
       </p>}
-      {done.length < 12 && !stopped && (
+      {reshooting > 0 && <div className="notice" role="status"><LoaderCircle size={18} className="spin" /><p>Your new version is being created. Your other photos are ready to save.</p></div>}
+      {done.length < 12 && !stopped && !reshooting && (
         <div className="progress-panel">
           <div>
             <Images size={20} />
@@ -1641,7 +1643,7 @@ function Gallery({
                   <div className="photo-developing">
                     <LoaderCircle size={29} className="spin" />
                     <span>
-                      {!shoot.sample && ["failed", "finished", "manual-review", "paused"].some(value => value === shoot.status || value === shoot.generationState) ? "Not ready" : photo.revision ? "Reshooting…" : "Developing…"}
+                      {photo.reshooting || (shoot.sample && photo.revision) ? "Reshooting…" : stopped ? "Not ready" : "Developing…"}
                     </span>
                   </div>
                 )}
@@ -1657,17 +1659,21 @@ function Gallery({
                 <button
                   className="icon-button"
                   aria-label={`Reshoot ${photo.slotId}`}
-                  disabled={!ready || shoot.reshootsLeft === 0}
+                  disabled={!ready || !!reshootUnavailable || reshootPending}
+                  title={reshootUnavailable || undefined}
                   onClick={() =>
                     void handle(async () => {
-                      await service.reshoot(
-                        shoot.id,
-                        photo.slotId,
-                        crypto.randomUUID(),
-                      );
-                      notify(
-                        shoot.sample ? "Demo reshoot started. The sample image will be reused." : "Your reshoot request has been checked. The gallery updates as it finishes.",
-                      );
+                      if (reshootRequest.current) return;
+                      reshootRequest.current = true;
+                      setReshootPending(true);
+                      try {
+                        await service.reshoot(shoot.id, photo.slotId, crypto.randomUUID());
+                        notify(shoot.sample ? "Demo reshoot started. The sample image will be reused."
+                          : "Your reshoot request has been checked. The gallery updates as it finishes.");
+                      } finally {
+                        reshootRequest.current = false;
+                        setReshootPending(false);
+                      }
                     })
                   }
                 >

@@ -184,6 +184,88 @@ it("a pending reshoot is reconciled instead of consuming another reshoot", async
   expect(api.reshoot).toHaveBeenCalledTimes(2);
 });
 
+it("starts a new reshoot on a new photo after reconciling the delayed previous result", async () => {
+  await service.read();
+  api.reshoot.mockResolvedValueOnce({ operationState: "finishing" });
+  const first = crypto.randomUUID();
+  await service.reshoot("job_1", "s0", first);
+  const newer = job(); newer.slots[0].path = photoPath.replace("photo.jpg", "new.jpg");
+  newer.readableOutputPaths = [newer.slots[0].path];
+  api.watchJobs.mock.calls[0][0]([newer]);
+  api.reshootStatus.mockResolvedValue({ operationState: "finished" });
+  const next = crypto.randomUUID();
+  await service.reshoot("job_1", "s0", next);
+  expect(api.reshootStatus).toHaveBeenCalledWith(expect.objectContaining({ operationId: first }));
+  expect(api.reshoot).toHaveBeenCalledTimes(2);
+  expect(api.reshoot.mock.calls[1][0]).toMatchObject({ operationId: next, previousPath: newer.slots[0].path });
+});
+
+it("two tabs replacing a finished reshoot share one new operation", async () => {
+  await service.read();
+  api.reshoot.mockResolvedValue({ operationState: "finishing" });
+  await service.reshoot("job_1", "s0", crypto.randomUUID());
+  const newer = job(); newer.slots[0].path = photoPath.replace("photo.jpg", "new.jpg");
+  api.watchJobs.mock.calls[0][0]([newer]);
+  api.listJobs.mockResolvedValue([newer]);
+  const other = new LiveStudioService(async () => api as API, namespace); await other.read();
+  const checks: (() => void)[] = [];
+  api.reshootStatus.mockImplementation(() => new Promise(resolve => { checks.push(() => resolve({ operationState: "finished" })); }));
+  const a = service.reshoot("job_1", "s0", crypto.randomUUID());
+  const b = other.reshoot("job_1", "s0", crypto.randomUUID());
+  await vi.waitFor(() => expect(checks).toHaveLength(2));
+  api.reshootStatus.mockResolvedValue({ operationState: "finishing" });
+  checks.forEach(resolve => resolve()); await Promise.all([a, b]);
+  expect(api.reshoot).toHaveBeenCalledTimes(2); // First photo, then exactly one replacement request.
+});
+
+it("an uncertain earlier reshoot cannot authorize another generation", async () => {
+  await service.read(); api.reshoot.mockResolvedValue({ operationState: "finishing" });
+  await service.reshoot("job_1", "s0", crypto.randomUUID());
+  const newer = job(); newer.slots[0].path = photoPath.replace("photo.jpg", "new.jpg");
+  api.watchJobs.mock.calls[0][0]([newer]);
+  api.reshootStatus.mockRejectedValue(new Error("Connection lost"));
+  await expect(service.reshoot("job_1", "s0", crypto.randomUUID())).rejects.toThrow("Connection lost");
+  expect(api.reshoot).toHaveBeenCalledOnce();
+});
+
+it("preserves the server explanation when a reshoot cannot start", async () => {
+  await service.read();
+  api.reshoot.mockResolvedValue({ operationState: "not-started", message: "The retry window for this pack has ended." });
+  await expect(service.reshoot("job_1", "s0", crypto.randomUUID())).rejects.toThrow("window for this pack has ended");
+});
+
+it("a closed reshoot offers the existing support route without promising a replacement", async () => {
+  await service.read();
+  api.reshoot.mockResolvedValue({ operationState: "not-started", message: "This pack is closed. Use its replacement or contact support." });
+  await expect(service.reshoot("job_1", "s0", crypto.randomUUID())).rejects.toThrow(
+    "Reshoots are unavailable for this shoot. You can save your available photos or contact support.");
+});
+
+it("a refund observed before fulfillment releases the old order for an intentional same-shoot purchase", async () => {
+  await service.checkout(draft, "buyer@example.com");
+  api.reconcileWebCheckout.mockResolvedValue(checkout("refunded"));
+  await service.payment("order_1");
+  await service.startDraft("paris", "w", "casual");
+  api.createOrder.mockResolvedValue({ orderId: "order_2" });
+  api.beginWebCheckout.mockResolvedValue({ ...checkout(), orderId: "order_2" });
+  const next = await service.checkout((await local.read()).draft!, "buyer@example.com");
+  expect(next.orderId).toBe("order_2");
+  expect(api.uploadReferences).toHaveBeenCalledTimes(2);
+  expect(api.uploadReferences.mock.calls[1][1]).not.toBe(api.uploadReferences.mock.calls[0][1]);
+  await service.payment("order_1"); // Late old receipts must not erase the new checkpoint.
+  const saved = await (await openDB(`${namespace}-operations`)).getAll("attempts");
+  expect(saved).toHaveLength(1); expect(saved[0].orderId).toBe("order_2");
+});
+
+it("a refund discovered while resuming creates a fresh order on the same intentional tap", async () => {
+  await service.checkout(draft, "buyer@example.com");
+  api.beginWebCheckout.mockResolvedValueOnce(checkout("refunded"))
+    .mockResolvedValue({ ...checkout(), orderId: "order_2" });
+  api.createOrder.mockResolvedValue({ orderId: "order_2" });
+  expect(await service.checkout(draft, "buyer@example.com")).toMatchObject({ orderId: "order_2", state: "open" });
+  expect(api.createOrder).toHaveBeenCalledTimes(2);
+});
+
 it("passes private photo downloads and final access checks through the authorized adapter", async () => {
   const photo = projectWebJob(job(), {}).photos[0];
   await service.photoBlob("job_1", photo); await service.assertPhotos("job_1", [photo]);

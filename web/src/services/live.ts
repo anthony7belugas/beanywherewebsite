@@ -24,10 +24,14 @@ export function projectWebJob(job: NativeJobProjection & { id: string }, favorit
     createdAt: (job.createdAt?.seconds || 0) * 1000, reshootsLeft: Math.max(0, job.reshootsLeft || 0),
     checkoutKey: job.orderId || job.id, operationIds: [], sample: false,
     status: job.status, generationState: job.generationState,
+    retryWindowEndsAtMs: job.retryWindowEndsAtMs,
+    deliveryClosed: job.deliveryClosed === true || !!job.deliveryClosedAt,
+    reshootsClosedReason: job.reshootsClosedReason, emailRequestState: job.emailRequestState,
     photos: (job.slots || []).map(slot => ({
       slotId: slot.slotId, sceneId: slot.sceneId, take: slot.take,
       label: pack?.scenes.find(scene => scene.sceneId === slot.sceneId)?.label || "Your photo",
       url: "", path: slot.path, status: slot.status,
+      reshooting: slot.reshooting === true || (!!slot.claimId && typeof slot.prevPath === "string"),
       favorite: favorites[`${job.id}/${slot.slotId}`] === true,
       revision: 0,
       // There is no simulated completion clock in a paid gallery.
@@ -211,7 +215,7 @@ export class LiveStudioService implements StudioService {
     return this.checkoutInFlight = this.runCheckout(review, email.trim(), controller.signal)
       .finally(() => { this.checkoutInFlight = undefined; this.checkoutAbort = undefined; });
   }
-  private async runCheckout(review: CheckoutReview, email: string, signal: AbortSignal) {
+  private async runCheckout(review: CheckoutReview, email: string, signal: AbortSignal, recoveredRefund = false): Promise<ReturnType<typeof result>> {
     const draft = { ...await this.current(review, signal), email };
     const invalid = validateDraft(draft);
     if (invalid) throw new Error(invalid);
@@ -290,6 +294,13 @@ export class LiveStudioService implements StudioService {
     if (checkout.amountMinor !== 399 || checkout.currency !== "usd") {
       throw new Error("The price has changed. Contact support before continuing.");
     }
+    if (checkout.state === "refunded") {
+      // A verified refund closes only this order. Keep the reviewed selfies, but
+      // use a fresh upload/order identity for an intentional new purchase.
+      await this.releaseAttempt(attempt);
+      if (!recoveredRefund) return this.runCheckout(review, email, signal, true);
+      throw new Error("This purchase is closed. Review your shoot before trying again.");
+    }
     if (checkout.state === "fulfilled") await this.finishDraft(attempt);
     if (checkout.state === "open") this.track("purchase_initiated", { packId: draft.packId, styling: draft.styling });
     return result(checkout);
@@ -322,7 +333,7 @@ export class LiveStudioService implements StudioService {
   async payment(orderId: string) {
     const api = await this.api();
     const checkout = await api.reconcileWebCheckout(orderId);
-    if (checkout.state === "expired") {
+    if (["expired", "refunded"].includes(checkout.state)) {
       // Only a server-confirmed terminal checkout can release its immutable attempt.
       // A late response for an older order must never erase a newer checkout.
       const db = await this.database();
@@ -399,8 +410,17 @@ export class LiveStudioService implements StudioService {
     if (!slot?.path || slot.status !== "done") throw new Error("Wait for this photo to finish.");
     const db = await this.database();
     const key = `${api.session.uid}/${shootId}/${slotId}`;
+    const previous = await db.get("reshoots", key) as ReshootOperation | undefined;
+    // A new visible photo is not proof that the old request settled. Verify its
+    // receipt before atomically replacing that checkpoint with this new tap.
+    const previousFinished = previous && previous.previousPath !== slot.path &&
+      (await api.reshootStatus(previous) as { operationState?: string }).operationState === "finished";
+    const latestSlot = this.allJobs().find(job => job.id === shootId)?.slots.find(value => value.slotId === slotId);
+    if (latestSlot?.status !== "done" || latestSlot.path !== slot.path)
+      throw new Error("This photo changed. Review it before reshooting.");
     const tx = db.transaction("reshoots", "readwrite");
     let saved = await tx.store.get(key) as ReshootOperation | undefined;
+    if (previousFinished && saved?.operationId === previous?.operationId) saved = undefined;
     const replay = !!saved;
     if (!saved) {
       saved = { schemaVersion: 1, uid: api.session.uid, jobId: shootId, slotId,
@@ -408,7 +428,7 @@ export class LiveStudioService implements StudioService {
       await tx.store.put(saved, key);
     }
     await tx.done;
-    let outcome: { operationState?: string };
+    let outcome: { operationState?: string; message?: string };
     try {
       outcome = await (replay ? api.reshootStatus(saved) : api.reshoot(saved)) as typeof outcome;
     } catch {
@@ -422,7 +442,10 @@ export class LiveStudioService implements StudioService {
       await cleanup.done;
     }
     if (["rolled-back", "not-started", "closed"].includes(outcome.operationState || "")) {
-      throw new Error("That reshoot did not finish. Your photos are unchanged; try again or contact support.");
+      const message = outcome.message === "This pack is closed. Use its replacement or contact support."
+        ? "Reshoots are unavailable for this shoot. You can save your available photos or contact support."
+        : outcome.message;
+      throw new Error(message || "That reshoot did not finish. Your photos are unchanged; try again or contact support.");
     }
     await this.refreshGalleries(); this.changed();
   }

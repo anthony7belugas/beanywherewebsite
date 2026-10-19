@@ -48,6 +48,7 @@ export type Photo = {
   readyAt: number;
   path?: string;
   status?: string;
+  reshooting?: boolean;
 };
 export type Shoot = {
   id: string;
@@ -62,6 +63,10 @@ export type Shoot = {
   sample: boolean;
   status?: string;
   generationState?: string;
+  retryWindowEndsAtMs?: number;
+  deliveryClosed?: boolean;
+  reshootsClosedReason?: string;
+  emailRequestState?: string;
 };
 export type CheckoutResult = Shoot | { kind: "payment"; orderId: string; url: string | null; jobId: string | null; state: string };
 export type StudioState = {

@@ -1,12 +1,19 @@
 import { zipSync, strToU8 } from "fflate";
 import type { Photo, Reference } from "./types";
-async function photoStep<T>(promise: Promise<T>, milliseconds: number): Promise<T> {
+async function photoStep<T>(promise: Promise<T>, milliseconds: number, signal?: AbortSignal): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let abort: (() => void) | undefined;
   try {
     return await Promise.race([promise, new Promise<never>((_, reject) => {
+      abort = () => reject(signal?.reason || new Error("Photo preparation cancelled."));
+      signal?.addEventListener("abort", abort, { once: true });
+      if (signal?.aborted) abort();
       timer = setTimeout(() => reject(new Error("Photo preparation timed out.")), milliseconds);
     })]);
-  } finally { if (timer) clearTimeout(timer); }
+  } finally {
+    if (timer) clearTimeout(timer);
+    if (abort) signal?.removeEventListener("abort", abort);
+  }
 }
 export async function prepareReference(file: File): Promise<Reference> {
   const heic = ["image/heic", "image/heif"].includes(file.type.toLowerCase()) || /\.hei[cf]$/i.test(file.name);
@@ -130,8 +137,8 @@ export async function preparePhotoDownload(
     const files: Record<string, Uint8Array> = {};
     for (const p of photos) {
       if (options.loadPhoto) {
-        const blob = await photoStep(options.loadPhoto(p), 30000);
-        const bytes = new Uint8Array(await blob.arrayBuffer());
+        const blob = await photoStep(options.loadPhoto(p), 30000, controller.signal);
+        const bytes = new Uint8Array(await photoStep(blob.arrayBuffer(), 30000, controller.signal));
         active();
         const jpeg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
         const png = bytes.slice(0, 8).join(",") === "137,80,78,71,13,10,26,10";
@@ -153,7 +160,7 @@ export async function preparePhotoDownload(
         throw new Error(
           "The server did not return a valid preview image. Restart the local preview and try again.",
         );
-      const bytes = new Uint8Array(await response.arrayBuffer());
+      const bytes = new Uint8Array(await photoStep(response.arrayBuffer(), 30000, controller.signal));
       active();
       if (
         bytes.length < 12 ||
@@ -166,7 +173,7 @@ export async function preparePhotoDownload(
         );
       files[`${title}-sample-${p.slotId}.webp`] = bytes;
     }
-    await options.beforeSave?.();
+    if (options.beforeSave) await photoStep(options.beforeSave(), 120000, controller.signal);
     active();
     const prepared = Object.entries(files).map(([name, bytes]) => new File([bytes as BlobPart], name, {
       type: name.endsWith(".jpg") ? "image/jpeg" : name.endsWith(".png") ? "image/png" : "image/webp",

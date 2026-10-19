@@ -42,6 +42,11 @@ export type NativeJobProjection = {
   refundOutputAccessRevoked?: boolean;
   status: string;
   generationState?: string;
+  retryWindowEndsAtMs?: number;
+  deliveryClosedAt?: unknown;
+  deliveryClosed?: boolean;
+  reshootsClosedReason?: string;
+  emailRequestState?: string;
   orderId?: string;
   reshootsLeft: number;
   readableOutputPaths?: string[];
@@ -52,6 +57,9 @@ export type NativeJobProjection = {
     status: string;
     path?: string;
     failureClass?: string;
+    reshooting?: boolean;
+    claimId?: string;
+    prevPath?: string;
   }[];
   createdAt?: { seconds: number };
 };

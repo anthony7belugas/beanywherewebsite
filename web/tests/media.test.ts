@@ -123,6 +123,38 @@ it("bounds a stalled authorized photo request", async () => {
   await result;
 });
 
+it("releases a stalled final check at the overall deadline and permits a fresh download", async () => {
+  vi.useFakeTimers();
+  const bytes = readFileSync("public/assets/scenes/paris/w/chic/0.webp");
+  const loadPhoto = async () => new Blob([bytes]);
+  let finish!: () => void;
+  const beforeSave = vi.fn(() => new Promise<void>(resolve => { finish = resolve; }));
+  const result = expect(preparePhotoDownload([photo], "Paris", { loadPhoto, beforeSave })).rejects.toThrow("too long");
+  await vi.waitFor(() => expect(beforeSave).toHaveBeenCalledOnce());
+  await vi.advanceTimersByTimeAsync(120001);
+  await result;
+  expect(vi.getTimerCount()).toBe(0);
+  finish(); // A late reply must not revive the expired download.
+  const retry = await preparePhotoDownload([photo], "Paris", { loadPhoto, beforeSave: async () => {} });
+  expect(retry.files).toHaveLength(1);
+});
+
+it.each(["photo", "final check"])("cancels immediately while the %s request is stalled", async stage => {
+  vi.useFakeTimers();
+  const bytes = readFileSync("public/assets/scenes/paris/w/chic/0.webp");
+  const controller = new AbortController();
+  const stalled = vi.fn(() => new Promise<never>(() => {}));
+  const result = expect(preparePhotoDownload([photo], "Paris", {
+    signal: controller.signal,
+    loadPhoto: stage === "photo" ? stalled : async () => new Blob([bytes]),
+    beforeSave: stage === "final check" ? stalled : undefined,
+  })).rejects.toThrow("Left gallery");
+  await vi.waitFor(() => expect(stalled).toHaveBeenCalledOnce());
+  controller.abort(new Error("Left gallery"));
+  await result;
+  expect(vi.getTimerCount()).toBe(0);
+});
+
 it("does not save a downloaded image if the final shoot-access check fails", async () => {
   const bytes = readFileSync("public/assets/scenes/paris/w/chic/0.webp");
   vi.stubGlobal(
