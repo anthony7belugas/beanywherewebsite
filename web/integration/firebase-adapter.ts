@@ -41,6 +41,7 @@ export type NativeJobProjection = {
   refundOutputAccessRevoked?: boolean;
   status: string;
   generationState?: string;
+  orderId?: string;
   reshootsLeft: number;
   readableOutputPaths?: string[];
   slots: {
@@ -477,6 +478,39 @@ export function createFirebaseAdapter(deps: AdapterDependencies) {
         .sort(
           (a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0),
         );
+    },
+    async watchJobs(next: (jobs: (NativeJobProjection & { id: string })[]) => void, error: (error: Error) => void) {
+      await ready();
+      assertSession();
+      let stopped = false;
+      let stopSnapshot = () => {};
+      const stop = () => {
+        if (stopped) return;
+        stopped = true;
+        stopSnapshot();
+        teardown.delete(stop);
+        next([]);
+      };
+      teardown.add(stop);
+      stopSnapshot = onSnapshot(query(collection(db, "jobs"), where("uid", "==", session.uid),
+        where("clientVisible", "==", true), orderBy("createdAt", "desc"), limit(100)), snapshot => {
+        if (stopped) return;
+        try {
+          assertSession();
+          next(snapshot.docs.map(d => ({ ...(d.data() as NativeJobProjection), id: d.id }))
+            .filter(job => readableJob(job, session.uid)));
+        } catch (e) { stop(); error(e as Error); }
+      }, e => { if (!stopped) { stop(); error(e); } });
+      if (stopped) stopSnapshot();
+      return stop;
+    },
+    async assertPhotos(jobId: string, paths: string[]) {
+      await ready();
+      const fresh = (await getDocFromServer(doc(db, "jobs", documentId(jobId)))).data() as NativeJobProjection;
+      assertSession();
+      if (!fresh || !paths.length || !paths.every(path => authorizedOutput(fresh, session.uid, path, jobId))) {
+        throw new Error("These photos are no longer available. Refresh your gallery.");
+      }
     },
     async download(jobId: string, path: string) {
       await ready();

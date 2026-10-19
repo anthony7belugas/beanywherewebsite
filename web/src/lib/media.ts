@@ -77,7 +77,8 @@ export function saveBlob(blob: Blob, name: string) {
 export async function downloadPhotos(
   photos: Photo[],
   title: string,
-  options: { signal?: AbortSignal; beforeSave?: () => Promise<void> } = {},
+  options: { signal?: AbortSignal; beforeSave?: () => Promise<void>; sample?: boolean;
+    loadPhoto?: (photo: Photo) => Promise<Blob> } = {},
 ) {
   if (!photos.length) throw new Error("Select a finished photo first.");
   const controller = new AbortController();
@@ -88,7 +89,7 @@ export async function downloadPhotos(
     () =>
       controller.abort(
         new Error(
-          "The download took too long. Try again while the local preview is running.",
+          "The download took too long. Check your connection and try again.",
         ),
       ),
     30000,
@@ -99,7 +100,23 @@ export async function downloadPhotos(
   try {
     active();
     const files: Record<string, Uint8Array> = {};
+    let contentType = "image/webp";
     for (const p of photos) {
+      if (options.loadPhoto) {
+        const blob = await options.loadPhoto(p);
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        active();
+        const jpeg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+        const png = bytes.slice(0, 8).join(",") === "137,80,78,71,13,10,26,10";
+        const webp = String.fromCharCode(...bytes.slice(0, 4)) === "RIFF" &&
+          String.fromCharCode(...bytes.slice(8, 12)) === "WEBP";
+        if (bytes.length < 12 || bytes.length > 20 * 1024 * 1024 || !(jpeg || png || webp)) {
+          throw new Error("This photo could not be downloaded. Please try again.");
+        }
+        contentType = jpeg ? "image/jpeg" : png ? "image/png" : "image/webp";
+        files[`${title}-${p.slotId}.${jpeg ? "jpg" : png ? "png" : "webp"}`] = bytes;
+        continue;
+      }
       const response = await fetch(p.url, { signal: controller.signal });
       if (!response.ok)
         throw new Error("A preview image could not be downloaded. Try again.");
@@ -127,17 +144,17 @@ export async function downloadPhotos(
     active();
     if (photos.length === 1) {
       saveBlob(
-        new Blob([Object.values(files)[0] as BlobPart], { type: "image/webp" }),
+        new Blob([Object.values(files)[0] as BlobPart], { type: contentType }),
         Object.keys(files)[0],
       );
       return;
     }
-    files["ABOUT-THESE-SAMPLES.txt"] = strToU8(
+    if (options.sample !== false) files["ABOUT-THESE-SAMPLES.txt"] = strToU8(
       "BeAnywhere private draft. These are existing marketing preview images, repeated across the 12-photo demo. They were not generated from your uploaded selfies. No payment was taken.",
     );
     saveBlob(
       new Blob([zipSync(files) as BlobPart], { type: "application/zip" }),
-      `BeAnywhere-${title}-samples.zip`,
+      `BeAnywhere-${title}${options.sample === false ? "" : "-samples"}.zip`,
     );
   } catch (error) {
     if (controller.signal.aborted) throw controller.signal.reason;

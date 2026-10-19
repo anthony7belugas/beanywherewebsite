@@ -45,6 +45,8 @@ export type Photo = {
   favorite: boolean;
   revision: number;
   readyAt: number;
+  path?: string;
+  status?: string;
 };
 export type Shoot = {
   id: string;
@@ -56,8 +58,11 @@ export type Shoot = {
   reshootsLeft: number;
   checkoutKey: string;
   operationIds: string[];
-  sample: true;
+  sample: boolean;
+  status?: string;
+  generationState?: string;
 };
+export type CheckoutResult = Shoot | { kind: "payment"; orderId: string; url: string | null; jobId: string | null; state: string };
 export type StudioState = {
   version: 1;
   draft: Draft | null;
@@ -66,12 +71,17 @@ export type StudioState = {
   email: string;
 };
 export interface StudioService {
+  readonly mode: "demo" | "live";
   read(): Promise<StudioState>;
   subscribe(listener: () => void): () => void;
   updateDraft(expected: DraftGuard, patch: DraftUpdate): Promise<void>;
   startDraft(packId: string, styling: Styling, styleId: string): Promise<void>;
   setStyling(styling: Styling): Promise<void>;
-  checkout(review: CheckoutReview, email: string): Promise<Shoot>;
+  checkout(review: CheckoutReview, email: string): Promise<CheckoutResult>;
+  payment?(orderId: string): Promise<Extract<CheckoutResult, { kind: "payment" }>>;
+  photoBlob?(shootId: string, photo: Photo): Promise<Blob>;
+  assertPhotos?(shootId: string, photos: Photo[]): Promise<void>;
+  deleteAllPhotos?(): Promise<void>;
   setFavorite(
     shootId: string,
     slotId: string,

@@ -26,7 +26,8 @@ import {
   UserRound,
   X,
 } from "lucide-react";
-import { LocalStudioService } from "./services/local";
+import { service, liveMode } from "./services";
+import { LiveAccount, LiveInfo, PaymentReturn, StudioImage } from "./components/LiveStudio";
 import {
   packs,
   packById,
@@ -48,7 +49,6 @@ import type {
 } from "./lib/types";
 import { Modal } from "./components/Modal";
 
-const service = new LocalStudioService();
 function go(path: string) {
   window.location.hash = path;
 }
@@ -114,7 +114,7 @@ export default function App() {
             setFatal(
               savedDataError
                 ? error.message
-                : "This browser is blocking local storage. Allow website storage, or try a regular browser window.",
+                : liveMode && error instanceof Error ? error.message : "This browser is blocking local storage. Allow website storage, or try a regular browser window.",
             );
           }
         });
@@ -158,7 +158,7 @@ export default function App() {
         <h1>
           {recoverable
             ? "Your saved studio needs attention."
-            : "Your studio needs browser storage."}
+            : liveMode ? "Your studio needs to reconnect." : "Your studio needs browser storage."}
         </h1>
         <p>{fatal}</p>
         <button className="button" onClick={() => window.location.reload()}>
@@ -168,8 +168,8 @@ export default function App() {
           (confirmReset ? (
             <div className="prose">
               <p>
-                This permanently clears this studio’s saved drafts, reference
-                photos, sample shoots, and demo email from this browser.
+                {liveMode ? "This clears your saved draft and its selfies from this browser. Your paid photos and payment records remain available."
+                  : "This permanently clears this studio’s saved drafts, reference photos, sample shoots, and demo email from this browser."}
               </p>
               <div className="dialog-actions">
                 <button
@@ -219,6 +219,8 @@ export default function App() {
       </main>
     );
   const draft = state.draft;
+  const returnedOrder = liveMode ? new URLSearchParams(window.location.search).get("checkout") : null;
+  const paymentRoute = liveMode && !!returnedOrder && ["/payment", "/checkout"].includes(path);
   const currentPack = path.startsWith("/shoot/")
     ? packById(path.split("/")[2])
     : null;
@@ -239,7 +241,7 @@ export default function App() {
       >
         Skip to content
       </a>
-      <div className="draft-banner">
+      {!liveMode && <div className="draft-banner">
         <span className="status-dot" />
         PRIVATE DRAFT{" "}
         <span className="banner-copy">
@@ -248,7 +250,7 @@ export default function App() {
         <button onClick={() => setDialog("help")}>
           About this draft <Info size={12} />
         </button>
-      </div>
+      </div>}
       <header className="header">
         <div className="shell header-inner">
           <a className="wordmark" href="#/" aria-label="BeAnywhere home">
@@ -356,7 +358,8 @@ export default function App() {
               body="Choose a photoshoot to begin your next set of photos."
             />
           ))}
-        {path === "/checkout" &&
+        {paymentRoute && <PaymentReturn key={returnedOrder} orderId={returnedOrder!} shoots={state.shoots} />}
+        {path === "/checkout" && !paymentRoute &&
           (draft ? (
             <Checkout
               key={draft.checkoutKey}
@@ -381,7 +384,7 @@ export default function App() {
             handle={handle}
           />
         )}
-        {!["/", "/upload", "/checkout", "/library"].includes(path) &&
+        {!paymentRoute && !["/", "/upload", "/checkout", "/library"].includes(path) &&
           !currentPack &&
           !currentShoot && (
             <Empty
@@ -424,12 +427,13 @@ export default function App() {
               : dialog === "privacy"
                 ? "Your photos, your choice"
                 : dialog === "terms"
-                  ? "About using this draft"
+                  ? liveMode ? "Using BeAnywhere" : "About using this draft"
                   : "Your studio"
           }
           onClose={closeDialog}
         >
-          {dialog === "help" && (
+          {liveMode && ["help", "privacy", "terms"].includes(dialog) && <LiveInfo type={dialog as "help" | "privacy" | "terms"} />}
+          {!liveMode && dialog === "help" && (
             <div className="prose">
               <p className="lead">
                 The complete experience, in a private preview.
@@ -463,7 +467,7 @@ export default function App() {
               </button>
             </div>
           )}
-          {dialog === "privacy" && (
+          {!liveMode && dialog === "privacy" && (
             <div className="prose">
               <p className="lead">Your uploads stay on this device.</p>
               <p>
@@ -490,7 +494,7 @@ export default function App() {
               </p>
             </div>
           )}
-          {dialog === "terms" && (
+          {!liveMode && dialog === "terms" && (
             <div className="prose">
               <p className="lead">This is a private, noncommercial preview.</p>
               <p>
@@ -730,8 +734,7 @@ function Explore({
           </div>
         )}
         <p className="preview-caption">
-          Collection imagery is illustrative. Your photos will be unique when
-          live generation is connected.
+          {liveMode ? "Collection imagery illustrates the setting and styling. Your AI results will vary." : "Collection imagery is illustrative. Your photos will be unique when live generation is connected."}
         </p>
       </section>
       <section className="how">
@@ -1201,7 +1204,7 @@ function Upload({
             ))}
           </div>
         )}
-        <button
+        {!liveMode && (<button
           className="text-button demo-photos"
           disabled={busy}
           onClick={() =>
@@ -1224,7 +1227,7 @@ function Upload({
           }
         >
           Just looking around? Use demo photos <ArrowRight size={14} />
-        </button>
+        </button>)}
         <div className="consents">
           <label className="checkbox">
             <input
@@ -1245,15 +1248,15 @@ function Upload({
               onChange={(e) => void saveSetting("consent", e.target.checked)}
             />
             <span>
-              I’m 18 or older. These are photos of me, an adult who has given
-              permission, or the supplied demo images.
+              {liveMode ? "I’m 18 or older. These photos show me or another adult who has explicitly agreed to this photoshoot."
+                : "I’m 18 or older. These are photos of me, an adult who has given permission, or the supplied demo images."}
             </span>
           </label>
         </div>
         <div className="flow-actions">
           <p>
             <LockKeyhole size={14} />
-            Saved only in this browser.
+            {liveMode ? "Saved in this browser until checkout." : "Saved only in this browser."}
           </p>
           <button
             className="button"
@@ -1311,8 +1314,14 @@ function Checkout({
     setError("");
     try {
       const shoot = await service.checkout(draft, checked.email);
-      go(`/gallery/${shoot.id}`);
-      notify("Demo shoot created. No payment was taken.");
+      if ("kind" in shoot && shoot.kind === "payment") {
+        if (shoot.url) { window.location.assign(shoot.url); return; }
+        window.history.replaceState(null, "", `${window.location.pathname}?checkout=${encodeURIComponent(shoot.orderId)}${window.location.hash}`);
+        go("/payment");
+      } else if ("id" in shoot) {
+        go(`/gallery/${shoot.id}`);
+        notify("Demo shoot created. No payment was taken.");
+      }
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -1361,36 +1370,34 @@ function Checkout({
             maxLength={254}
           />
           <p id="email-note" className="input-note">
-            Saved locally for this demo. No account is created and no email is
-            sent.
+            {liveMode ? "Use an email you can receive messages at. No Google login is needed." : "Saved locally for this demo. No account is created and no email is sent."}
           </p>
           <div className="payment-preview">
             <div className="payment-title">
               <LockKeyhole size={19} />
               <div>
-                <strong>Demo checkout</strong>
-                <span>No card details needed</span>
+                <strong>{liveMode ? "Secure checkout" : "Demo checkout"}</strong>
+                <span>{liveMode ? "Pay securely with Stripe" : "No card details needed"}</span>
               </div>
-              <span className="pill">SIMULATED</span>
+              <span className="pill">{liveMode ? "ONE TIME" : "SIMULATED"}</span>
             </div>
             <div className="receipt-line">
               <span>BeAnywhere photoshoot</span>
               <span>{money}</span>
             </div>
-            <div className="receipt-line">
+            {!liveMode && <div className="receipt-line">
               <span>Private preview adjustment</span>
               <span>−{money}</span>
-            </div>
+            </div>}
             <div className="receipt-total">
               <span>Due today</span>
               <strong>
-                $0.00 <small>USD</small>
+                {liveMode ? money : "$0.00"} <small>USD</small>
               </strong>
             </div>
           </div>
           <p className="checkout-disclosure">
-            This preview uses sample images, not AI results from your selfies.
-            Your reference photos never leave this browser.
+            {liveMode ? "Continuing uploads your selfies and opens Stripe checkout. Generation begins only after the server confirms payment. AI results can vary." : "This preview uses sample images, not AI results from your selfies. Your reference photos never leave this browser."}
           </p>
           {error && (
             <p className="form-error" role="alert">
@@ -1401,18 +1408,18 @@ function Checkout({
             {busy ? (
               <>
                 <LoaderCircle size={17} className="spin" />
-                Creating your demo…
+                {liveMode ? "Preparing secure checkout…" : "Creating your demo…"}
               </>
             ) : (
               <>
-                Create my demo shoot <Sparkles size={17} />
+                {liveMode ? `Continue to pay ${money}` : "Create my demo shoot"} <Sparkles size={17} />
               </>
             )}
           </button>
           <p className="fine-print terms-line">
             By continuing, you agree to the{" "}
             <button type="button" onClick={onTerms}>
-              draft terms
+              {liveMode ? "terms" : "draft terms"}
             </button>{" "}
             and{" "}
             <button type="button" onClick={onPrivacy}>
@@ -1478,15 +1485,17 @@ function Library({ shoots, now }: { shoots: Shoot[]; now: number }) {
                 <div className="pack-image">
                   <img
                     src={cover(pack.packId, shoot.styling)}
-                    alt={`${pack.title} sample shoot`}
+                    alt={`${pack.title} photoshoot`}
                   />
                   <span className="library-state">
                     {done === 12 ? (
                       <Check size={13} />
+                    ) : !shoot.sample && ["failed", "finished", "paused", "manual-review", "refund-hold"].some(value => value === shoot.status || value === shoot.generationState) ? (
+                      <Info size={13} />
                     ) : (
                       <LoaderCircle className="spin" size={13} />
                     )}{" "}
-                    {done === 12 ? "Ready to explore" : `Developing ${done}/12`}
+                    {done === 12 ? "Ready to explore" : !shoot.sample && ["failed", "finished", "paused", "manual-review", "refund-hold"].includes(shoot.generationState || shoot.status || "") ? `${done} photos · Open for details` : `Developing ${done}/12`}
                   </span>
                 </div>
                 <div className="pack-card-heading">
@@ -1502,7 +1511,7 @@ function Library({ shoots, now }: { shoots: Shoot[]; now: number }) {
                   · {shoot.photos.filter((p) => p.favorite).length} favorites
                 </p>
                 <div className="pack-meta">
-                  12 sample slots · {shoot.reshootsLeft} reshoots left
+                  {shoot.sample ? "12 sample slots" : `${done} photos ready`} · {shoot.reshootsLeft} reshoots left
                 </div>
               </a>
             );
@@ -1518,13 +1527,13 @@ function Library({ shoots, now }: { shoots: Shoot[]; now: number }) {
           }
           body={
             filter === "All shoots"
-              ? "Your photoshoots will live here. Pick a setting and take the demo for a spin."
+              ? liveMode ? "Your paid photoshoots will appear here, including shoots still being prepared." : "Your photoshoots will live here. Pick a setting and take the demo for a spin."
               : "Tap the heart on a photo to add it to your favorites."
           }
         />
       )}
       <p className="preview-caption">
-        Private draft · Sample shoots are saved to this browser only.
+        {liveMode ? "Your web photos are separate from purchases in the mobile app." : "Private draft · Sample shoots are saved to this browser only."}
       </p>
     </section>
   );
@@ -1577,7 +1586,10 @@ function Gallery({
     try {
       await downloadPhotos(list, pack.title.replaceAll(" ", "-"), {
         signal: controller.signal,
+        sample: shoot.sample,
+        loadPhoto: service.photoBlob ? photo => service.photoBlob!(shoot.id, photo) : undefined,
         beforeSave: async () => {
+          await service.assertPhotos?.(shoot.id, list);
           const current = (await service.read()).shoots.find(
             (s) => s.id === shoot.id,
           );
@@ -1588,7 +1600,7 @@ function Gallery({
                 !current.photos.some(
                   (fresh) =>
                     fresh.slotId === p.slotId &&
-                    fresh.revision === p.revision &&
+                    fresh.revision === p.revision && fresh.path === p.path &&
                     fresh.readyAt <= Date.now(),
                 ),
             )
@@ -1598,7 +1610,7 @@ function Gallery({
             );
         },
       });
-      notify("Sample download prepared.");
+      notify(shoot.sample ? "Sample download prepared." : "Your download is ready.");
     } catch (e) {
       if (!controller.signal.aborted) notify((e as Error).message);
     } finally {
@@ -1631,8 +1643,8 @@ function Gallery({
           </h1>
           <p className="lead">
             {done.length < 12
-              ? `Developing your demo · ${done.length} of 12 ready`
-              : `12 sample photo slots · ${shoot.reshootsLeft} reshoots left`}
+              ? `${shoot.sample ? "Developing your demo" : shoot.generationState === "finished" ? "Shoot finished" : shoot.status === "failed" ? "This shoot needs attention" : "Preparing your photos"} · ${done.length} of 12 ready`
+              : `${shoot.sample ? "12 sample photo slots" : "12 photos ready"} · ${shoot.reshootsLeft} reshoots left`}
           </p>
         </div>
         <button
@@ -1663,22 +1675,22 @@ function Gallery({
           <progress
             value={done.length}
             max={12}
-            aria-label="Demo photos completed"
+            aria-label={shoot.sample ? "Demo photos completed" : "Photos completed"}
           />
           <p>
-            You can leave this page and return to My photos. Your demo progress
-            is saved.
+            {shoot.sample ? "You can leave this page and return to My photos. Your demo progress is saved." : "Processing continues if you close this page. Return to My photos in this browser to check your shoot."}
           </p>
         </div>
       )}
-      <div className="notice gallery-notice">
+      {shoot.sample && <div className="notice gallery-notice">
         <Info size={18} />
         <p>
           <strong>Sample gallery.</strong> These six marketing previews repeat
           across 12 slots. They weren’t generated from your selfies. Demo
           reshoots reuse the same image.
         </p>
-      </div>
+      </div>}
+      {!shoot.sample && ["failed", "finished", "paused", "manual-review", "refund-hold"].some(value => value === shoot.status || value === shoot.generationState) && done.length < 12 && <div className="notice"><Info size={18} /><p>{shoot.generationState === "paused" ? "Generation is temporarily paused." : "Some photos could not be completed."} Your available photos can still be downloaded. <a href={`mailto:support@beanywhere.app?subject=${encodeURIComponent(`Web shoot ${shoot.id}`)}`}>Contact support about this shoot</a>.</p></div>}
       <div className="gallery-toolbar">
         <div className="filters">
           <button
@@ -1719,13 +1731,13 @@ function Gallery({
               ? `Clear ${visibleSelected.length} selected`
               : "Select all"}
           </button>
-          <button
+          {shoot.sample && (<button
             className="icon-button"
             aria-label="Delete this shoot"
             onClick={() => setDeleteOpen(true)}
           >
             <Trash2 size={17} />
-          </button>
+          </button>)}
         </div>
       </div>
       <div className="gallery-grid">
@@ -1744,11 +1756,8 @@ function Gallery({
                       aria-label={`Open ${photo.label}, take ${photo.take}`}
                       onClick={() => setLightbox(photo.slotId)}
                     >
-                      <img
-                        loading="lazy"
-                        src={photo.url}
-                        alt={`${photo.label}, take ${photo.take} — sample preview`}
-                      />
+                      <StudioImage shootId={shoot.id} photo={photo}
+                        alt={`${photo.label}, take ${photo.take}${shoot.sample ? " — sample preview" : ""}`} />
                     </button>
                     <label className="select-photo">
                       <input
@@ -1791,7 +1800,7 @@ function Gallery({
                   <div className="photo-developing">
                     <Sun size={29} className="slow-spin" />
                     <span>
-                      {photo.revision ? "Reshooting…" : "Developing…"}
+                      {!shoot.sample && ["failed", "finished", "manual-review", "paused"].some(value => value === shoot.status || value === shoot.generationState) ? "Not ready" : photo.revision ? "Reshooting…" : "Developing…"}
                     </span>
                   </div>
                 )}
@@ -1816,7 +1825,7 @@ function Gallery({
                         crypto.randomUUID(),
                       );
                       notify(
-                        "Demo reshoot started. The sample image will be reused.",
+                        shoot.sample ? "Demo reshoot started. The sample image will be reused." : "Your reshoot request has been checked. The gallery updates as it finishes.",
                       );
                     })
                   }
@@ -1864,10 +1873,7 @@ function Gallery({
             >
               <ChevronLeft />
             </button>
-            <img
-              src={activePhoto.url}
-              alt={`${activePhoto.label} sample preview`}
-            />
+            <StudioImage shootId={shoot.id} photo={activePhoto} alt={`${activePhoto.label}${shoot.sample ? " sample preview" : ""}`} />
             <button
               className="icon-button next"
               aria-label="Next photo"
@@ -1878,7 +1884,7 @@ function Gallery({
           </div>
           <div className="lightbox-actions">
             <span className="muted small">
-              Illustrative sample ·{" "}
+              {shoot.sample ? "Illustrative sample · " : "Your photo · "}
               {visibleReady.findIndex((p) => p.slotId === activePhoto.slotId) +
                 1}{" "}
               / {visibleReady.length}
@@ -1907,7 +1913,7 @@ function Gallery({
               onClick={() => void download([activePhoto])}
             >
               <Download size={16} />
-              Save sample
+              {shoot.sample ? "Save sample" : "Save photo"}
             </button>
           </div>
         </Modal>
@@ -1968,6 +1974,7 @@ function Account({
       setBusy(false);
     }
   };
+  if (liveMode) return <LiveAccount state={state} notify={notify} />;
   return (
     <div className="prose">
       <div className="account-card">

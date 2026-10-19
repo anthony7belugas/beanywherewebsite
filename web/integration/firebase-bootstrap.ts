@@ -1,4 +1,4 @@
-import { getApps, initializeApp, type FirebaseOptions } from "firebase/app";
+import { getApps, initializeApp } from "firebase/app";
 import { getAuth, getIdTokenResult, indexedDBLocalPersistence, setPersistence,
   signInWithCustomToken } from "firebase/auth";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, getToken } from "firebase/app-check";
@@ -9,29 +9,14 @@ import { createFirebaseAdapter, type WebCheckout } from "./firebase-adapter";
 import { browserIdentity } from "./browser-identity";
 import { admittedWebClaims, validWebSession, type WebSession } from "./web-session";
 
-export type StudioFirebaseConfig = {
-  firebase: FirebaseOptions;
-  appCheckSiteKey: string;
-  functionsRegion: string;
-};
+import { validateStudioFirebaseConfig, type StudioFirebaseConfig } from "./studio-config";
+export { validateStudioFirebaseConfig, type StudioFirebaseConfig } from "./studio-config";
 
 /** Deliberately named: the web app cannot adopt an existing default/native Firebase auth store. */
 const APP_NAME = "beanywhere-web-studio";
 let pending: Promise<ReturnType<typeof createFirebaseAdapter>> | undefined;
 let startedConfig: string | undefined;
 let appCheck: ReturnType<typeof initializeAppCheck> | undefined;
-
-export function validateStudioFirebaseConfig(config: StudioFirebaseConfig) {
-  if (config.firebase.projectId !== "bethere-3d7de" ||
-      config.firebase.appId !== "1:151223255006:web:7313193eb6302e7582674f" ||
-      config.firebase.authDomain !== "bethere-3d7de.firebaseapp.com" ||
-      !/^AIza[A-Za-z0-9_-]+$/.test(config.firebase.apiKey || "") ||
-      !["bethere-3d7de.firebasestorage.app", "bethere-3d7de.appspot.com"].includes(config.firebase.storageBucket || "") ||
-      !/^[A-Za-z0-9_-]{20,200}$/.test(config.appCheckSiteKey) ||
-      config.functionsRegion !== "us-central1") {
-    throw new Error("The web studio connection is not configured yet.");
-  }
-}
 
 export function connectWebStudio(config: StudioFirebaseConfig) {
   validateStudioFirebaseConfig(config);

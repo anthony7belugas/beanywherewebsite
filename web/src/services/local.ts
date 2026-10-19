@@ -13,6 +13,7 @@ import type {
 
 /** Only backend instantiated by the app. No Firebase, payment, analytics, or AI requests. */
 export class LocalStudioService implements StudioService {
+  readonly mode = "demo" as const;
   private db: ReturnType<typeof openDB> | undefined;
   private listeners = new Set<() => void>();
   private channel: BroadcastChannel | null = null;
@@ -191,6 +192,14 @@ export class LocalStudioService implements StudioService {
         s.draft.consent = false;
         s.draft.referenceVersion++;
       }
+    });
+  }
+  async completeCheckout(review: CheckoutReview, email: string) {
+    await this.mutate(s => {
+      s.email = email;
+      if (s.draft?.checkoutKey === review.checkoutKey &&
+          s.draft.referenceVersion === review.referenceVersion &&
+          s.draft.wearsGlasses === review.wearsGlasses) s.draft = null;
     });
   }
   async reset() {
