@@ -26,7 +26,7 @@ it("keeps explicit draft builds disconnected", () => {
 it("allows only the required live origins, with no localhost connections in production", () => {
   const policy = studioCsp(true, false);
   expect(policy).toContain("https://us-central1-bethere-3d7de.cloudfunctions.net");
-  expect(policy).toContain("https://firebaseappcheck.googleapis.com");
+  expect(policy).toContain("https://content-firebaseappcheck.googleapis.com");
   expect(policy).not.toMatch(/(?:^|\s)https:(?:\s|;|$)/);
   expect(policy).not.toContain("*"); expect(policy).not.toContain("localhost");
   expect(policy).not.toContain("unsafe-eval"); expect(policy).toContain("form-action 'none'");

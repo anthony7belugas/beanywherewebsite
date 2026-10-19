@@ -1,5 +1,0 @@
-/studio/*
-  Content-Security-Policy: default-src 'self'; script-src 'self' https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self' https://firebaseappcheck.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com https://firebasestorage.googleapis.com https://us-central1-bethere-3d7de.cloudfunctions.net https://www.google.com/recaptcha/; frame-src https://www.google.com/recaptcha/ https://recaptcha.google.com/recaptcha/; object-src 'none'; base-uri 'self'; form-action 'none'; upgrade-insecure-requests; frame-ancestors 'none'
-  Referrer-Policy: no-referrer
-  X-Content-Type-Options: nosniff
-  Permissions-Policy: camera=(), microphone=(), geolocation=()
