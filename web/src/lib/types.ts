@@ -73,6 +73,7 @@ export type StudioState = {
 export interface StudioService {
   readonly mode: "demo" | "live";
   read(): Promise<StudioState>;
+  track?(name: string, params: Record<string, string | number | boolean>): void;
   subscribe(listener: () => void): () => void;
   updateDraft(expected: DraftGuard, patch: DraftUpdate): Promise<void>;
   startDraft(packId: string, styling: Styling, styleId: string): Promise<void>;

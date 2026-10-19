@@ -39,6 +39,21 @@ export function projectWebJob(job: NativeJobProjection & { id: string }, favorit
 export class LiveStudioService implements StudioService {
   readonly mode = "live" as const;
   private apiPromise?: Promise<API>;
+  private eventSession = (() => {
+    try {
+      const key = "beanywhere-web-event-session";
+      const saved = sessionStorage.getItem(key);
+      const value = saved && /^[a-f0-9-]{36}$/.test(saved) ? saved : crypto.randomUUID();
+      sessionStorage.setItem(key, value); return value;
+    } catch { return crypto.randomUUID(); }
+  })();
+  private observedOrders = new Set<string>();
+  track(name: string, params: Record<string, string | number | boolean>) {
+    // Telemetry must never block a checkout, retry, gallery or download.
+    const eventId = crypto.randomUUID();
+    void this.api().then(api => api.recordEvent(name, { ...params, source: "web_studio",
+      sessionId: this.eventSession }, eventId)).catch(() => {});
+  }
   private db?: ReturnType<typeof openDB>;
   private listeners = new Set<() => void>();
   private jobs: (NativeJobProjection & { id: string })[] = [];
@@ -145,15 +160,18 @@ export class LiveStudioService implements StudioService {
       const ready = await api.checkPackReadiness(attempt.draft.packId, attempt.draft.styling, attempt.draft.styleId);
       if (!ready.ok) throw new Error(ready.reason || "This shoot is temporarily unavailable.");
       await api.recordConsent(attempt.draft.styling, attempt.draft.wearsGlasses);
+      this.track("consent_completed", { packId: draft.packId, styling: draft.styling });
       await this.current(review, signal);
       if (!attempt.uploadSessionId) {
         const blobs = attempt.draft.references.map(photo => {
           const bytes = Uint8Array.from(atob(photo.url.split(",")[1]), char => char.charCodeAt(0));
           return new Blob([bytes], { type: "image/jpeg" });
         });
+        this.track("upload_started", { packId: draft.packId, styling: draft.styling });
         const uploaded = await api.uploadReferences(blobs, attempt.uploadAttempt, attempt.draft.wearsGlasses,
           () => {}, signal);
         attempt = await this.checkpoint(attempt, { uploadSessionId: uploaded.sessionId });
+        this.track("upload_completed", { packId: draft.packId, styling: draft.styling });
       }
       await this.current(review, signal);
       const order = await api.createOrder({ packId: attempt.draft.packId,
@@ -170,6 +188,7 @@ export class LiveStudioService implements StudioService {
       throw new Error("The price has changed. Contact support before continuing.");
     }
     if (checkout.state === "fulfilled") await this.finishDraft(attempt);
+    if (checkout.state === "open") this.track("purchase_initiated", { packId: draft.packId, styling: draft.styling });
     return result(checkout);
   }
   private async finishDraft(attempt: Attempt) {
@@ -203,7 +222,14 @@ export class LiveStudioService implements StudioService {
       const db = await this.database();
       const key = await db.get("orders", `${api.session.uid}/${orderId}`);
       const attempt = key ? await db.get("attempts", key) as Attempt | undefined : undefined;
-      if (attempt?.uid === api.session.uid && attempt.orderId === orderId) await this.finishDraft(attempt);
+      if (attempt?.uid === api.session.uid && attempt.orderId === orderId) {
+        await this.finishDraft(attempt);
+        if (!this.observedOrders.has(orderId)) {
+          this.observedOrders.add(orderId);
+          this.track("purchase_completed", { packId: attempt.draft.packId, styling: attempt.draft.styling,
+            ...(checkout.jobId ? { jobId: checkout.jobId } : {}) });
+        }
+      }
     }
     return result(checkout);
   }

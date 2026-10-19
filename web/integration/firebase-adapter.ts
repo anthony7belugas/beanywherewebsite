@@ -228,6 +228,10 @@ export function createFirebaseAdapter(deps: AdapterDependencies) {
       stopAuth();
       invalidate();
     },
+    async recordEvent(name: string, params: Record<string, string | number | boolean>, eventId: string) {
+      return call("recordClientEvent", { name, params, eventId, expectedUid: session.uid,
+        occurredAtMs: Date.now() }, 10000);
+    },
     async catalog(): Promise<Pack[]> {
       await ready();
       assertSession();

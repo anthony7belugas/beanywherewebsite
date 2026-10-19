@@ -27,6 +27,7 @@ import {
   X,
 } from "lucide-react";
 import { service, liveMode } from "./services";
+import { studioRouteEvent } from "../integration/studio-events";
 import { LiveAccount, LiveInfo, PaymentReturn, StudioImage } from "./components/LiveStudio";
 import {
   packs,
@@ -94,6 +95,12 @@ export default function App() {
     [notify],
   );
   const closeDialog = useCallback(() => setDialog(null), []);
+  useEffect(() => {
+    if (!loaded || !liveMode) return;
+    const event = studioRouteEvent(path, state);
+    if (event) service.track?.(event.name, event.params);
+    // A screen visit is measured once, not on each polling refresh.
+  }, [loaded, path]);
   useEffect(() => {
     let alive = true;
     const refresh = () => {
@@ -900,7 +907,7 @@ function PackDetail({
           </button>
           <p className="fine-print">
             <LockKeyhole size={12} />
-            Private draft · Demo checkout is free
+            {liveMode ? "Secure checkout · One payment, no subscription" : "Private draft · Demo checkout is free"}
           </p>
         </div>
       </div>
@@ -1248,7 +1255,7 @@ function Upload({
               onChange={(e) => void saveSetting("consent", e.target.checked)}
             />
             <span>
-              {liveMode ? "I’m 18 or older. These photos show me or another adult who has explicitly agreed to this photoshoot."
+              {liveMode ? "I’m 18 or older. These photos show only me. I consent to processing them to create and deliver my AI photos."
                 : "I’m 18 or older. These are photos of me, an adult who has given permission, or the supplied demo images."}
             </span>
           </label>
