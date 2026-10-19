@@ -1370,7 +1370,7 @@ function Checkout({
             maxLength={254}
           />
           <p id="email-note" className="input-note">
-            {liveMode ? "Use an email you can receive messages at. No Google login is needed." : "Saved locally for this demo. No account is created and no email is sent."}
+            {liveMode ? "We’ll automatically email your completed photos here. No Google login is needed." : "Saved locally for this demo. No account is created and no email is sent."}
           </p>
           <div className="payment-preview">
             <div className="payment-title">

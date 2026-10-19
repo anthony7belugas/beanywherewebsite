@@ -133,6 +133,21 @@ it("a late fulfilled payment cannot erase a newer draft", async () => {
   expect((await local.read()).draft).toEqual(newer);
 });
 
+it("only verified expiration releases an old checkout and a delayed response preserves its replacement", async () => {
+  await service.checkout(draft, "buyer@example.com");
+  api.reconcileWebCheckout.mockResolvedValue(checkout("expired"));
+  await service.payment("order_1");
+  api.createOrder.mockResolvedValue({ orderId: "order_2" });
+  api.beginWebCheckout.mockResolvedValue({ ...checkout(), orderId: "order_2" });
+  await service.checkout(draft, "buyer@example.com");
+  expect(api.uploadReferences).toHaveBeenCalledTimes(2);
+  expect(api.uploadReferences.mock.calls[0][1]).not.toBe(api.uploadReferences.mock.calls[1][1]);
+  await service.payment("order_1");
+  await service.checkout(draft, "buyer@example.com");
+  expect(api.uploadReferences).toHaveBeenCalledTimes(2);
+  expect(api.beginWebCheckout.mock.calls.at(-1)).toEqual(["order_2", "buyer@example.com"]);
+});
+
 it("resetting draft storage does not discard the payment recovery record", async () => {
   await service.checkout(draft, "buyer@example.com");
   await service.reset();

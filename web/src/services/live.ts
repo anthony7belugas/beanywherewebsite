@@ -185,6 +185,20 @@ export class LiveStudioService implements StudioService {
   async payment(orderId: string) {
     const api = await this.api();
     const checkout = await api.reconcileWebCheckout(orderId);
+    if (checkout.state === "expired") {
+      // Only a server-confirmed terminal checkout can release its immutable attempt.
+      // A late response for an older order must never erase a newer checkout.
+      const db = await this.database();
+      const tx = db.transaction(["attempts", "orders"], "readwrite");
+      const orderKey = `${api.session.uid}/${orderId}`;
+      const key = await tx.objectStore("orders").get(orderKey);
+      const attempt = key ? await tx.objectStore("attempts").get(key) as Attempt | undefined : undefined;
+      if (attempt?.uid === api.session.uid && attempt.orderId === orderId) {
+        await tx.objectStore("attempts").delete(key);
+        await tx.objectStore("orders").delete(orderKey);
+      }
+      await tx.done;
+    }
     if (checkout.state === "fulfilled") {
       const db = await this.database();
       const key = await db.get("orders", `${api.session.uid}/${orderId}`);

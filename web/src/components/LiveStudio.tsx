@@ -71,6 +71,7 @@ export function PaymentReturn({ orderId, shoots }: { orderId: string; shoots: St
       : "We confirm payment securely before any paid generation starts."}</p>
     {error && <p className="form-error" role="alert">{error}</p>}
     {checkout?.state === "open" && checkout.url && <a className="button" href={checkout.url}>Continue to secure checkout</a>}
+    {checkout?.state === "expired" && <a className="button" href="/studio/#/upload">Review selfies and start again</a>}
     {!waiting && <button className="button secondary" onClick={() => setAttempt(n => n + 1)}>Check again</button>}
     <a className="text-button" href="#/library">My photos</a>
     <p className="small muted">Order reference: {orderId}</p>
@@ -83,11 +84,11 @@ export function LiveInfo({ type }: { type: "help" | "privacy" | "terms" }) {
     {type === "help" ? <><p className="lead">Upload, pay, and make it yours.</p><ol>
       <li>Choose a destination and a look, then add 4–6 clear selfies of one consenting adult.</li>
       <li>Enter your delivery email and pay once through Stripe. No Google login or subscription is required.</li>
-      <li>Watch your photos arrive in My photos. Processing continues when you close this page.</li>
+      <li>Watch your photos arrive in My photos. Processing continues when you close this page, and your completed set is emailed to you automatically.</li>
       <li>Download your favorites. If something needs attention, contact support with your order reference.</li>
     </ol><p>AI results can vary. The collection images show the setting and style, rather than a guaranteed result.</p></>
       : type === "privacy" ? <><p className="lead">Your studio uses a private browser sign-in.</p>
-        <p>Your browser keeps a secure sign-in so you can return to your photos. Your email alone does not open a gallery.</p>
+        <p>Your browser keeps a secure sign-in so you can return to your photos. We also email your completed set as attachments. Keep that email if you change browsers or clear website data.</p>
         <p>After you continue to checkout, your selfies are uploaded for processing. Firebase stores your studio data, Stripe handles payment, and our AI provider generates your photos.</p>
         <p>Use My studio to remove draft selfies or request deletion of all your uploaded and generated photos. Downloaded files remain on your device.</p>
         <a href="/privacy.html" target="_blank" rel="noreferrer">Full privacy policy</a></>
