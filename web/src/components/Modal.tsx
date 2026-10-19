@@ -14,6 +14,8 @@ export function Modal({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const id = useId();
+  const close = useRef(onClose);
+  useEffect(() => { close.current = onClose; }, [onClose]);
   useEffect(() => {
     const previous = document.activeElement as HTMLElement;
     const overflow = document.body.style.overflow;
@@ -25,7 +27,7 @@ export function Modal({
     const key = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        onClose();
+        close.current();
       }
       if (event.key === "Tab") {
         const nodes = Array.from(
@@ -53,7 +55,7 @@ export function Modal({
       if (background) background.inert = wasInert;
       if (previous?.isConnected) previous.focus();
     };
-  }, [onClose]);
+  }, []);
   return createPortal(
     <div
       className="modal-backdrop"

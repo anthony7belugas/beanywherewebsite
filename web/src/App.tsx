@@ -1296,6 +1296,7 @@ function Library({ shoots, email, now, onSettings }: { shoots: Shoot[]; email: s
           {filtered.map((shoot) => {
             const pack = packById(shoot.packId)!;
             const done = shoot.photos.filter((p) => p.readyAt <= now).length;
+            const { reshootSummary, reshootDeadline } = galleryState(shoot, now);
             return (
               <a
                 className="pack-card library-card"
@@ -1331,7 +1332,8 @@ function Library({ shoots, email, now, onSettings }: { shoots: Shoot[]; email: s
                   · {shoot.photos.filter((p) => p.favorite).length} favorites
                 </p>
                 <div className="pack-meta">
-                  {shoot.sample ? "12 sample slots" : `${done} photos ready`} · {shoot.reshootsLeft} reshoots left
+                  {shoot.sample ? "12 sample slots" : `${done} photos ready`} · {reshootSummary}
+                  {reshootDeadline && <span className="reshoot-deadline">Use reshoots by {reshootDeadline}.</span>}
                 </div>
               </a>
             );
@@ -1382,13 +1384,26 @@ function Gallery({
   const [busy, setBusy] = useState(false);
   const photos = shoot.photos.filter((p) => !favorites || p.favorite);
   const done = shoot.photos.filter((p) => p.readyAt <= now);
-  const { reshooting, stopped, reshootUnavailable } = galleryState(shoot, now);
+  const { reshooting, stopped, reshootUnavailable, reshootDeadline } = galleryState(shoot, now);
   const [reshootPending, setReshootPending] = useState(false);
   const [reshootConfirmation, setReshootConfirmation] = useState<{ shootId: string; photo: Photo } | null>(null);
   const reshootRequest = useRef(false);
   const [preparedPhotos, setPreparedPhotos] = useState<PreparedPhotos | null>(null);
   const [shareError, setShareError] = useState("");
   const [sharing, setSharing] = useState(false);
+  const failedPreviews = useRef(new Set<string>());
+  const [recoveredPreviews, setRecoveredPreviews] = useState<Record<string, { path: string; blob: Blob }>>({});
+  const markPreviewError = useCallback((photo: Photo) => {
+    if (photo.path) failedPreviews.current.add(photo.path);
+  }, []);
+  const recoverPreview = useCallback((photo: Photo, blob: Blob) => {
+    if (photo.path && failedPreviews.current.delete(photo.path)) {
+      // The viewer already recovered this exact version. Reuse its checked bytes
+      // so the failed tile updates without another download or a page refresh.
+      const path = photo.path;
+      setRecoveredPreviews(previous => ({ ...previous, [photo.slotId]: { path, blob } }));
+    }
+  }, []);
   const shareAvailable = canSharePhotos();
   const photoVersions = shoot.photos.map(p => `${p.slotId}:${p.path}:${p.revision}:${p.readyAt}`).join("|");
   useEffect(() => { setPreparedPhotos(null); }, [photoVersions]);
@@ -1540,7 +1555,8 @@ function Gallery({
         <RotateCcw size={19} aria-hidden="true" />
         <p><strong>3 individual reshoots included.</strong>{" "}
           {reshootPending && !reshooting ? "Checking your reshoot request…" : reshootUnavailable ||
-            "Want a different take? Use the reshoot button beneath a photo to create a new version."}</p>
+            "Want a different take? Use the reshoot button beneath a photo to create a new version."}
+          {reshootDeadline && <span className="reshoot-deadline">Use reshoots by {reshootDeadline}.</span>}</p>
       </div>
       {!shoot.sample && <p className="order-support">Questions or problems with your order?{" "}
         <a href={`mailto:support@beanywhere.app?subject=${encodeURIComponent(`Web shoot ${shoot.id}`)}`}>Email support@beanywhere.app</a>.
@@ -1638,6 +1654,8 @@ function Gallery({
                       onClick={() => setLightbox(photo.slotId)}
                     >
                       <StudioImage shootId={shoot.id} photo={photo}
+                        previewBlob={recoveredPreviews[photo.slotId]?.path === photo.path ? recoveredPreviews[photo.slotId]?.blob : undefined}
+                        onPreviewError={markPreviewError}
                         alt={`${photo.label}, take ${photo.take}${shoot.sample ? " — sample preview" : ""}`} />
                     </button>
                     <label className="select-photo">
@@ -1796,7 +1814,8 @@ function Gallery({
             >
               <ChevronLeft />
             </button>
-            <StudioImage shootId={shoot.id} photo={activePhoto} alt={`${activePhoto.label}${shoot.sample ? " sample preview" : ""}`} />
+            <StudioImage shootId={shoot.id} photo={activePhoto} onPreviewReady={recoverPreview}
+              alt={`${activePhoto.label}${shoot.sample ? " sample preview" : ""}`} />
             <button
               className="icon-button next"
               aria-label="Next photo"

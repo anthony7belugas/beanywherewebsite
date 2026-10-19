@@ -56,7 +56,14 @@ export function GalleryRecovery({ email, hasShoots, onRecovered, targetShootId }
   </div>;
 }
 
-export function StudioImage({ shootId, photo, alt }: { shootId: string; photo: Photo; alt: string }) {
+export function StudioImage({ shootId, photo, alt, previewBlob, onPreviewReady, onPreviewError }: {
+  shootId: string;
+  photo: Photo;
+  alt: string;
+  previewBlob?: Blob;
+  onPreviewReady?: (photo: Photo, blob: Blob) => void;
+  onPreviewError?: (photo: Photo) => void;
+}) {
   const [url, setUrl] = useState("");
   const [error, setError] = useState(false);
   useEffect(() => {
@@ -64,12 +71,16 @@ export function StudioImage({ shootId, photo, alt }: { shootId: string; photo: P
     let active = true;
     let objectURL = "";
     setUrl(""); setError(false);
-    void service.photoBlob(shootId, photo).then(blob => {
+    const request = previewBlob ? Promise.resolve(previewBlob) : service.photoBlob(shootId, photo);
+    void request.then(blob => {
       if (!active) return;
       objectURL = URL.createObjectURL(blob); setUrl(objectURL);
-    }).catch(() => { if (active) setError(true); });
+      onPreviewReady?.(photo, blob);
+    }).catch(() => {
+      if (active) { setError(true); onPreviewError?.(photo); }
+    });
     return () => { active = false; if (objectURL) URL.revokeObjectURL(objectURL); };
-  }, [shootId, photo.path]);
+  }, [shootId, photo.path, previewBlob, onPreviewReady, onPreviewError]);
   if (!photo.path) return <img loading="lazy" src={photo.url} alt={alt} />;
   if (url) return <img src={url} alt={alt} />;
   return <span className="photo-developing" role="status">

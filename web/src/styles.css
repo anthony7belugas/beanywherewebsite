@@ -1380,6 +1380,13 @@ hr {
   border-radius: 8px;
   color: var(--dim);
 }
+.reshoot-deadline {
+  display: block;
+  margin-top: 5px;
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1.6;
+}
 .reshoot-guide svg { flex-shrink: 0; margin-top: 2px; color: var(--accent); }
 .reshoot-guide p { margin: 0; font-size: 13px; line-height: 1.7; }
 .reshoot-guide strong { color: var(--text); }
