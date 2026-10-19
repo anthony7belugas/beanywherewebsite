@@ -1241,7 +1241,7 @@ function Library({ shoots, email, now, onSettings }: { shoots: Shoot[]; email: s
         </a>
       </div>
       <div className="library-guidance"><p>{liveMode ? "Your photoshoots, all in one place. Open a gallery to download photos or use a reshoot." : "Your saved sample photoshoots in this browser."}</p></div>
-      {liveMode && <GalleryRecovery email={email} hasShoots={shoots.length > 0} />}
+      {liveMode && <GalleryRecovery email={email} hasShoots={shoots.length > 0} onRecovered={() => setFilter("All shoots")} />}
       {shoots.length > 0 && <div className="library-toolbar">
         <div className="filters">
           {["All shoots", "With favorites"].map((f) => (

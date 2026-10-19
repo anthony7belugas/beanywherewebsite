@@ -1,35 +1,54 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LoaderCircle, Download, ShieldCheck } from "lucide-react";
 import { service } from "../services";
 import type { CheckoutResult, Photo, StudioState } from "../lib/types";
 
-export function GalleryRecovery({ email, hasShoots }: { email: string; hasShoots: boolean }) {
+export function GalleryRecovery({ email, hasShoots, onRecovered }: { email: string; hasShoots: boolean; onRecovered: () => void }) {
+  // Suggest the saved email once; background refreshes must not overwrite edits.
   const [value, setValue] = useState(email);
+  const input = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(!hasShoots);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [invalid, setInvalid] = useState(false);
   const [message, setMessage] = useState("");
+  const edit = (next: string) => { setValue(next); setMessage(""); setError(""); setInvalid(false); };
   return <div className={`gallery-recovery ${hasShoots ? "compact" : ""}`}>
     {hasShoots && !open ? <button className="text-button" onClick={() => setOpen(true)}>Find photos with your email</button>
-      : <form onSubmit={async event => {
+      : <form noValidate aria-busy={busy} onSubmit={async event => {
         event.preventDefault(); if (busy || !service.recoverGalleries) return;
+        const email = value.trim();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
+          setError("Enter your checkout email, like you@example.com."); setInvalid(true); setMessage("");
+          input.current?.focus(); return;
+        }
+        setValue(email);
         setBusy(true); setError(""); setMessage("");
         try {
-          const count = await service.recoverGalleries(value);
-          setMessage(count ? `Found ${count} ${count === 1 ? "photoshoot" : "photoshoots"}.` : "No web photoshoots found for this email yet. Check the address you used at checkout, or choose a shoot below.");
+          const count = await service.recoverGalleries(email);
+          onRecovered();
+          setMessage(count ? `Found ${count} ${count === 1 ? "photoshoot" : "photoshoots"}. Open a gallery below.` : "No web photoshoots found. Check that this is the email you used to pay on this website.");
         } catch (e) { setError(e instanceof Error ? e.message : "Couldn’t find your photos. Please try again."); }
         finally { setBusy(false); }
       }}>
         <h2>{hasShoots ? "Looking for another shoot?" : "Find your photos"}</h2>
-        <p>Enter the email you used at checkout to open your web galleries.</p>
+        <p id="gallery-email-note">Enter the email you used at checkout to open your web galleries.</p>
         <label className="field-label" htmlFor="gallery-email">Checkout email</label>
-        <div className="recovery-fields"><input id="gallery-email" type="email" autoComplete="email"
-          required maxLength={254} value={value} onChange={event => { setValue(event.target.value); setMessage(""); setError(""); }}
-          placeholder="you@example.com" disabled={busy} />
-          <button className="button" disabled={busy}>{busy ? "Finding your photos…" : "Find my photos"}</button></div>
-        {error && <p className="form-error" role="alert">{error}</p>}
+        <div className="recovery-fields">
+          <div className="recovery-email">
+            <input ref={input} id="gallery-email" type="email" inputMode="email" autoComplete="email"
+              autoCapitalize="none" autoCorrect="off" spellCheck={false}
+              required maxLength={254} value={value} onChange={event => edit(event.target.value)}
+              aria-invalid={invalid || undefined} aria-describedby={`gallery-email-note${error ? " gallery-email-error" : ""}`}
+              placeholder="you@example.com" disabled={busy} />
+            {value && <button type="button" className="clear-email" aria-label="Clear email" disabled={busy}
+              onClick={() => { edit(""); input.current?.focus(); }}>Clear</button>}
+          </div>
+          <button type="submit" className="button" disabled={busy}>{busy ? "Finding your photos…" : "Find my photos"}</button>
+        </div>
+        {error && <p id="gallery-email-error" className="form-error" role="alert">{error}</p>}
         {message && <p className="recovery-message" role="status">{message}</p>}
-        {hasShoots && <button type="button" className="text-button" onClick={() => setOpen(false)}>Close</button>}
+        {hasShoots && <button type="button" className="text-button" disabled={busy} onClick={() => setOpen(false)}>Close</button>}
       </form>}
   </div>;
 }

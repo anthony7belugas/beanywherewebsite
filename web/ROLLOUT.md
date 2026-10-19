@@ -134,3 +134,18 @@ Validation: 146 frontend tests plus TypeScript/build; focused backend payment,
 recovery, refund, email and native-isolation checks; SDK-backed reshoot replay and
 zero-allowance tests; account cleanup checks. Public homepage reviewed at desktop,
 375px and 320px. No real-money transaction or new AI generation was used for this change.
+
+### Gallery lookup usability — October 19, 2026
+
+The lookup continues to suggest the saved checkout/recovery email. Editing or
+clearing it does not send email; it only changes the lookup field. A visible Clear
+action, readable placeholder, mobile email keyboard, and inline validation make
+corrections easier. Feedback is linked to the field for assistive technology, and
+closing the form is disabled while a lookup is pending.
+
+Successful searches reset the library to All shoots so a previous With favorites
+filter cannot hide recovered galleries. Verified with an isolated local fixture:
+saved email, clear/empty validation, connection failure, no matches, and recovery
+of a gallery with zero favorites while the favorites filter was selected. Reviewed
+at desktop and 375px with no horizontal overflow. Existing 146 frontend checks and
+production build pass. No payment, generation, or email-delivery changes.
