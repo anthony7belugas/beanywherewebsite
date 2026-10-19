@@ -1043,13 +1043,18 @@ function Upload({
           <label className="checkbox">
             <input
               type="checkbox"
+              aria-labelledby="glasses-label"
+              aria-describedby="glasses-help"
               checked={glasses}
               disabled={savingSettings}
               onChange={(e) =>
                 void saveSetting("wearsGlasses", e.target.checked)
               }
             />
-            <span>I wear glasses. Keep them part of my look.</span>
+            <span>
+              <span id="glasses-label">I’m wearing prescription glasses in these photos.</span>
+              <span className="checkbox-help" id="glasses-help">Turn this on to help avoid adding sunglasses or goggles over your glasses.</span>
+            </span>
           </label>
           <label className="checkbox">
             <input
@@ -1379,6 +1384,7 @@ function Gallery({
   const done = shoot.photos.filter((p) => p.readyAt <= now);
   const { reshooting, stopped, reshootUnavailable } = galleryState(shoot, now);
   const [reshootPending, setReshootPending] = useState(false);
+  const [reshootConfirmation, setReshootConfirmation] = useState<{ shootId: string; photo: Photo } | null>(null);
   const reshootRequest = useRef(false);
   const [preparedPhotos, setPreparedPhotos] = useState<PreparedPhotos | null>(null);
   const [shareError, setShareError] = useState("");
@@ -1406,6 +1412,38 @@ function Gallery({
   );
   const closeLightbox = useCallback(() => setLightbox(null), []);
   const closeDelete = useCallback(() => setDeleteOpen(false), []);
+  const closeReshoot = useCallback(() => setReshootConfirmation(null), []);
+  const confirmationPhoto = reshootConfirmation?.photo;
+  const confirmationChanged = !!reshootConfirmation && (
+    reshootConfirmation.shootId !== shoot.id || !shoot.photos.some(photo =>
+      photo.slotId === confirmationPhoto?.slotId && photo.path === confirmationPhoto.path &&
+      photo.revision === confirmationPhoto.revision && photo.readyAt <= now)
+  );
+  const confirmationUnavailable = reshootUnavailable || (confirmationChanged
+    ? "This photo changed. Close this message and review the latest version before reshooting." : "");
+  const confirmReshoot = async () => {
+    if (!reshootConfirmation || confirmationUnavailable || reshootRequest.current || busy) return;
+    const { shootId, photo } = reshootConfirmation;
+    reshootRequest.current = true;
+    setReshootPending(true);
+    setReshootConfirmation(null);
+    try {
+      // Recheck persisted state in case another tab changed the shoot while the dialog was open.
+      const current = (await service.read()).shoots.find(s => s.id === shootId);
+      if (!current || !current.photos.some(fresh => fresh.slotId === photo.slotId &&
+        fresh.path === photo.path && fresh.revision === photo.revision && fresh.readyAt <= Date.now())) {
+        throw new Error("This photo changed. Review the latest version before reshooting.");
+      }
+      const unavailable = galleryState(current, Date.now()).reshootUnavailable;
+      if (unavailable) throw new Error(unavailable);
+      await service.reshoot(shootId, photo.slotId, crypto.randomUUID());
+      notify(shoot.sample ? "Demo reshoot started. The sample image will be reused."
+        : "Your reshoot request has been checked. The gallery updates as it finishes.");
+    } finally {
+      reshootRequest.current = false;
+      setReshootPending(false);
+    }
+  };
   const download = async (list: Photo[]) => {
     if (downloadOperation.current) return;
     const controller = new AbortController();
@@ -1657,27 +1695,17 @@ function Gallery({
                   </span>
                 </div>
                 <button
-                  className="icon-button"
+                  className="reshoot-button"
                   aria-label={`Reshoot ${photo.slotId}`}
                   disabled={!ready || !!reshootUnavailable || reshootPending}
                   title={reshootUnavailable || undefined}
-                  onClick={() =>
-                    void handle(async () => {
-                      if (reshootRequest.current) return;
-                      reshootRequest.current = true;
-                      setReshootPending(true);
-                      try {
-                        await service.reshoot(shoot.id, photo.slotId, crypto.randomUUID());
-                        notify(shoot.sample ? "Demo reshoot started. The sample image will be reused."
-                          : "Your reshoot request has been checked. The gallery updates as it finishes.");
-                      } finally {
-                        reshootRequest.current = false;
-                        setReshootPending(false);
-                      }
-                    })
-                  }
+                  onClick={(event) => {
+                    // Safari does not focus clicked buttons; retain the dialog's return point.
+                    event.currentTarget.focus();
+                    setReshootConfirmation({ shootId: shoot.id, photo });
+                  }}
                 >
-                  <RotateCcw size={16} />
+                  <RotateCcw size={14} aria-hidden="true" /> Reshoot
                 </button>
               </div>
             </article>
@@ -1711,6 +1739,28 @@ function Gallery({
           </div>
         </aside>
       )}
+      {reshootConfirmation && confirmationPhoto && !preparedPhotos && <Modal title="Create a new take?" onClose={closeReshoot}>
+        <div className="reshoot-confirmation">
+          <div className="reshoot-preview">
+            <StudioImage shootId={reshootConfirmation.shootId} photo={confirmationPhoto} alt={`${confirmationPhoto.label}, take ${confirmationPhoto.take} — current photo`} />
+            <div>
+              <strong>{confirmationPhoto.label}</strong>
+              <p className="muted small">Take {confirmationPhoto.take} · Current photo</p>
+              <button className="text-button" disabled={busy || confirmationChanged} onClick={() => void download([confirmationPhoto])}>
+                {busy ? <LoaderCircle size={15} className="spin" /> : <Download size={15} />}
+                {busy ? "Preparing photo…" : "Save current photo"}
+              </button>
+            </div>
+          </div>
+          {!confirmationUnavailable && <p className="reshoot-cost">{shoot.reshootsLeft === 1 ? "This uses your last remaining reshoot." : `This uses 1 of your ${shoot.reshootsLeft} remaining reshoots.`}</p>}
+          <p>When the new version is ready, it replaces this photo in your gallery. Save this version first if you want to keep it.</p>
+          {confirmationUnavailable && <p className="form-error" role="alert">{confirmationUnavailable}</p>}
+          <div className="dialog-actions">
+            <button className="button secondary" onClick={closeReshoot}>Keep this photo</button>
+            <button className="button" disabled={busy || reshootPending || !!confirmationUnavailable} onClick={() => void handle(confirmReshoot)}>Use 1 reshoot</button>
+          </div>
+        </div>
+      </Modal>}
       {preparedPhotos && <Modal title="Save your photos" onClose={() => { if (!sharing) setPreparedPhotos(null); }}>
         <div className="save-photos-panel">
           <p>{preparedPhotos.files.length === 1 ? "Your photo is ready." : `Your ${preparedPhotos.files.length} photos are ready.`} Choose where to save or share them.</p>

@@ -5,6 +5,13 @@ async function start(page: import("@playwright/test").Page) {
   await page.goto("/#/shoot/paris");
   await page.getByRole("button", { name: "Add your selfies" }).click();
   await page.getByRole("button", { name: /Use demo photos/ }).click();
+  await expect(page.getByText("4 / 6 photos selected")).toBeVisible();
+  const glasses = page.getByRole("checkbox", { name: "I’m wearing prescription glasses in these photos.", exact: true });
+  await expect(glasses).toHaveAccessibleDescription("Turn this on to help avoid adding sunglasses or goggles over your glasses.");
+  await glasses.check();
+  await expect(glasses).toBeEnabled();
+  await page.reload();
+  await expect(glasses).toBeChecked();
   await page.getByRole("checkbox", { name: /18 or older/ }).check();
   await page.getByRole("button", { name: "Review my shoot" }).click();
   await page.getByLabel("Your email").fill("preview@example.com");
@@ -17,6 +24,9 @@ async function start(page: import("@playwright/test").Page) {
 test("complete desktop journey, persistence, favorites, ZIP, reshoot and deletion", async ({
   page,
 }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "canShare", { value: () => false });
+  });
   const errors: string[] = [];
   const remote: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
@@ -42,6 +52,7 @@ test("complete desktop journey, persistence, favorites, ZIP, reshoot and deletio
   await page.getByRole("button", { name: "Download all", exact: true }).click();
   expect((await dl).suggestedFilename()).toMatch(/\.zip$/);
   await page.getByRole("button", { name: "Reshoot s0", exact: true }).click();
+  await page.getByRole("button", { name: "Use 1 reshoot", exact: true }).click();
   await expect(
     page.getByText(/12 sample photo slots · 2 reshoots left/),
   ).toBeVisible();

@@ -66,6 +66,13 @@ async function seed(page: Page, state: unknown, route = "/") {
   await page.reload();
 }
 
+async function useDownloads(page: Page) {
+  // Exercise the download fallback independently of the host's native share sheet.
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "canShare", { value: () => false });
+  });
+}
+
 test("damaged saved data has a non-destructive recovery screen and a confirmed reset", async ({
   page,
 }) => {
@@ -112,6 +119,7 @@ test("damaged saved data has a non-destructive recovery screen and a confirmed r
 test("Favorites downloads and viewer navigation include only the filtered photos", async ({
   page,
 }) => {
+  await useDownloads(page);
   const state = galleryState();
   state.shoots[0].photos[0].favorite = true;
   await seed(page, state, `/gallery/${state.shoots[0].id}`);
@@ -145,6 +153,7 @@ test("a selected photo being reshot cannot accidentally download the rest of the
   page,
   context,
 }) => {
+  await useDownloads(page);
   const state = galleryState();
   const route = `/gallery/${state.shoots[0].id}`;
   await seed(page, state, route);
@@ -152,6 +161,7 @@ test("a selected photo being reshot cannot accidentally download the rest of the
   const other = await context.newPage();
   await other.goto(`/#${route}`);
   await other.getByRole("button", { name: "Reshoot s0", exact: true }).click();
+  await other.getByRole("button", { name: "Use 1 reshoot", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Download selected" }),
   ).toBeDisabled();
@@ -161,6 +171,7 @@ test("a selected photo being reshot cannot accidentally download the rest of the
 });
 
 test("leaving a gallery cancels its pending download", async ({ page }) => {
+  await useDownloads(page);
   const state = galleryState();
   await seed(page, state, `/gallery/${state.shoots[0].id}`);
   await page.evaluate(() => {
@@ -192,4 +203,94 @@ test("leaving a gallery cancels its pending download", async ({ page }) => {
   await expect
     .poll(() => page.evaluate(() => Reflect.get(window, "downloadAborted")))
     .toBe(true);
+});
+
+test("reshoot review can be cancelled or saved, and only confirmation spends one reshoot", async ({ page }) => {
+  await useDownloads(page);
+  const state = galleryState();
+  await seed(page, state, `/gallery/${state.shoots[0].id}`);
+  await page.setViewportSize({ width: 320, height: 740 });
+  const opener = page.getByRole("button", { name: "Reshoot s0", exact: true });
+  await opener.click();
+  const dialog = page.getByRole("dialog", { name: "Create a new take?" });
+  await expect(dialog).toContainText("This uses 1 of your 3 remaining reshoots.");
+  await expect(dialog).toContainText("When the new version is ready, it replaces this photo in your gallery.");
+  await expect(dialog.locator("img")).toHaveAttribute("alt", /current photo/);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await dialog.getByRole("button", { name: "Keep this photo" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(opener).toBeFocused();
+  await expect(page.getByText(/12 sample photo slots · 3 reshoots left/)).toBeVisible();
+
+  await opener.click();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await opener.click();
+  const download = page.waitForEvent("download");
+  await dialog.getByRole("button", { name: "Save current photo" }).click();
+  expect((await download).suggestedFilename()).toBe("Paris-sample-s0.webp");
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("3 remaining reshoots");
+  const confirm = dialog.getByRole("button", { name: "Use 1 reshoot", exact: true });
+  await expect(confirm).toBeEnabled();
+  // A fast repeat tap must not spend a second allowance.
+  await confirm.evaluate(button => { (button as HTMLButtonElement).click(); (button as HTMLButtonElement).click(); });
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByText(/12 sample photo slots · 2 reshoots left/)).toBeVisible();
+  await expect(page.locator(".photo-tile").first()).toContainText("Reshoot 1");
+  await page.reload();
+  await expect(page.getByText(/12 sample photo slots · 2 reshoots left/)).toBeVisible();
+});
+
+test("saving through the native share flow returns to the reshoot review without spending it", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "canShare", { value: () => true });
+    Object.defineProperty(navigator, "share", { value: async ({ files }: { files: File[] }) => {
+      Reflect.set(window, "savedPhotoNames", files.map(file => file.name));
+    } });
+  });
+  const state = galleryState();
+  state.shoots[0].reshootsLeft = 1;
+  await seed(page, state, `/gallery/${state.shoots[0].id}`);
+  await page.getByRole("button", { name: "Reshoot s0", exact: true }).click();
+  await expect(page.getByRole("dialog")).toContainText("This uses your last remaining reshoot.");
+  await page.getByRole("button", { name: "Save current photo" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(1);
+  await expect(page.getByRole("dialog", { name: "Save your photos" })).toBeVisible();
+  await page.getByRole("button", { name: "Save or share photos" }).click();
+  await expect(page.getByRole("dialog", { name: "Create a new take?" })).toBeVisible();
+  expect(await page.evaluate(() => Reflect.get(window, "savedPhotoNames"))).toEqual(["Paris-sample-s0.webp"]);
+  await page.getByRole("button", { name: "Keep this photo" }).click();
+  await expect(page.getByRole("button", { name: "Reshoot s0", exact: true })).toBeFocused();
+  expect(await page.locator("#root").evaluate(root => (root as HTMLElement).inert)).toBe(false);
+  await page.reload();
+  await page.getByRole("button", { name: "Reshoot s0", exact: true }).click();
+  await expect(page.getByRole("dialog")).toContainText("This uses your last remaining reshoot.");
+  await page.getByRole("button", { name: "Use 1 reshoot", exact: true }).click();
+  await expect(page.getByText("You’ve used your included reshoots.", { exact: false })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Reshoot s0", exact: true })).toBeDisabled();
+});
+
+test("a stale confirmation cannot reshoot a newer photo from another tab", async ({ page, context }) => {
+  await context.addInitScript(() => {
+    Object.defineProperty(window, "BroadcastChannel", { value: undefined });
+  });
+  const state = galleryState();
+  const route = `/gallery/${state.shoots[0].id}`;
+  await seed(page, state, route);
+  await page.getByRole("button", { name: "Reshoot s0", exact: true }).click();
+  await page.evaluate(() => {
+    window.addEventListener("focus", event => event.stopImmediatePropagation(), true);
+    document.addEventListener("visibilitychange", event => event.stopImmediatePropagation(), true);
+  });
+  const other = await context.newPage();
+  await other.goto(`/#${route}`);
+  await other.getByRole("button", { name: "Reshoot s0", exact: true }).click();
+  await other.getByRole("button", { name: "Use 1 reshoot", exact: true }).click();
+  await expect(other.getByText(/12 sample photo slots · 2 reshoots left/)).toBeVisible();
+  await page.getByRole("button", { name: "Use 1 reshoot", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("This photo changed.");
+  await page.reload();
+  await expect(page.getByText(/12 sample photo slots · 2 reshoots left/)).toBeVisible();
+  await expect(page.locator(".photo-tile").first()).toContainText("Reshoot 1");
 });

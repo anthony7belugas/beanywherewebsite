@@ -16,7 +16,7 @@ test("failed permission and glasses saves roll back their visible state", async 
       throw new DOMException("Storage full", "QuotaExceededError");
     };
   });
-  const glasses = page.getByRole("checkbox", { name: /I wear glasses/ });
+  const glasses = page.getByRole("checkbox", { name: /I’m wearing prescription glasses/ });
   const consent = page.getByRole("checkbox", { name: /18 or older/ });
   await glasses.click();
   await expect(page.getByRole("status")).toContainText("Storage full");

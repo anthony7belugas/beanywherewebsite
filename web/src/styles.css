@@ -1093,6 +1093,12 @@ hr {
 .checkbox input {
   margin: 2px 0 0;
 }
+.checkbox-help {
+  display: block;
+  margin-top: 5px;
+  font-size: 10px;
+  line-height: 1.6;
+}
 .flow-actions {
   display: flex;
   align-items: center;
@@ -1577,6 +1583,59 @@ progress::-moz-progress-bar {
   min-height: 28px;
   color: var(--dim);
 }
+.reshoot-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 44px;
+  padding: 5px 8px;
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--dim);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+.reshoot-button:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--dim);
+}
+.reshoot-confirmation > p {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--dim);
+  margin: 16px 0 0;
+}
+.reshoot-confirmation > .reshoot-cost {
+  color: var(--text);
+  font-weight: 600;
+}
+.reshoot-preview {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.reshoot-preview > img,
+.reshoot-preview > .photo-developing {
+  width: 96px;
+  height: 128px;
+  flex-shrink: 0;
+  object-fit: cover;
+  border-radius: 5px;
+}
+.reshoot-preview > div { min-width: 0; }
+.reshoot-preview strong { font-size: 14px; }
+.reshoot-preview p { margin: 7px 0 12px; }
+.reshoot-preview .text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  font-size: 12px;
+  text-align: left;
+}
+.reshoot-preview .text-button svg { flex-shrink: 0; }
+.reshoot-confirmation > .form-error { color: #f3a889; }
 .photo-developing {
   display: flex;
   align-items: center;
@@ -2572,7 +2631,11 @@ progress::-moz-progress-bar {
   }
   .photo-caption {
     gap: 3px;
+    flex-wrap: wrap;
+    align-items: flex-start;
   }
+  .photo-caption > div { flex-basis: 100%; }
+  .reshoot-button { margin-top: 5px; }
   .favorite {
     width: 32px;
     height: 32px;
@@ -2627,6 +2690,7 @@ progress::-moz-progress-bar {
     gap: 8px;
     padding: 10px 15px;
   }
+  .reshoot-confirmation .dialog-actions .button { flex: 1 0 100%; }
   .lightbox > img {
     max-width: calc(100% - 54px);
     max-height: 58vh;
