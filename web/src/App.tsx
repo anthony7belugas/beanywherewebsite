@@ -1167,6 +1167,7 @@ function Checkout({
             className="text-input"
             id="email"
             type="email"
+            disabled={busy}
             autoComplete="email"
             placeholder="you@example.com"
             value={email}

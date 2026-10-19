@@ -371,3 +371,179 @@ it("a lost cancellation reply preserves the original checkout until a verified r
   await service.editCheckout({ review: draft });
   expect((await local.read()).draft!.checkoutKey).not.toBe(draft.checkoutKey);
 });
+
+it.each(["glasses", "photos", "look"])("closes the earlier checkout before a replacement after changing %s", async change => {
+  await service.checkout(draft, "buyer@example.com");
+  if (change === "look") await service.startDraft("paris", "w", "chic");
+  else if (change === "glasses") await service.updateDraft(draft, { wearsGlasses: true });
+  else {
+    await service.updateDraft(draft, { references: [...draft.references].reverse() });
+    await service.updateDraft((await local.read()).draft!, { consent: true });
+  }
+  api.createOrder.mockResolvedValue({ orderId: "order_2" });
+  api.beginWebCheckout.mockResolvedValue({ ...checkout(), orderId: "order_2" });
+  const next = (await local.read()).draft!;
+  expect(await service.checkout(next, "correct@example.com")).toMatchObject({ orderId: "order_2" });
+  expect(api.cancelWebCheckout).toHaveBeenCalledExactlyOnceWith("order_1");
+  expect(api.cancelWebCheckout.mock.invocationCallOrder[0]).toBeLessThan(api.createOrder.mock.invocationCallOrder[1]);
+});
+
+it.each(["paid", "fulfilled", "needs-support"])("shows the original %s purchase instead of charging for an edit", async state => {
+  await service.checkout(draft, "buyer@example.com");
+  await service.updateDraft(draft, { wearsGlasses: true });
+  const changed = (await local.read()).draft!;
+  api.cancelWebCheckout.mockResolvedValue(checkout(state));
+  expect(await service.checkout(changed, "buyer@example.com")).toMatchObject({ orderId: "order_1", state });
+  expect(api.createOrder).toHaveBeenCalledTimes(1);
+  expect(api.beginWebCheckout).toHaveBeenCalledTimes(1);
+  expect((await local.read()).draft?.wearsGlasses).toBe(true);
+});
+
+it.each(["open", "creating"])("does not redirect an edited shoot to an earlier %s checkout", async state => {
+  await service.checkout(draft, "buyer@example.com");
+  await service.updateDraft(draft, { wearsGlasses: true });
+  api.cancelWebCheckout.mockResolvedValue(checkout(state));
+  await expect(service.checkout((await local.read()).draft!, "buyer@example.com")).rejects.toThrow("earlier checkout");
+  expect(api.beginWebCheckout).toHaveBeenCalledTimes(1);
+});
+
+it("keeps the prior payment checkpoint when closing it fails, then retries safely", async () => {
+  await service.checkout(draft, "buyer@example.com");
+  await service.updateDraft(draft, { wearsGlasses: true });
+  const changed = (await local.read()).draft!;
+  api.cancelWebCheckout.mockRejectedValueOnce(new Error("offline"));
+  await expect(service.checkout(changed, "buyer@example.com")).rejects.toThrow("offline");
+  expect(api.createOrder).toHaveBeenCalledTimes(1);
+  const db = await openDB(`${namespace}-operations`);
+  expect((await db.getAll("attempts"))[0].orderId).toBe("order_1");
+  api.createOrder.mockResolvedValue({ orderId: "order_2" });
+  api.beginWebCheckout.mockResolvedValue({ ...checkout(), orderId: "order_2" });
+  await service.checkout(changed, "buyer@example.com");
+  expect(api.cancelWebCheckout).toHaveBeenCalledTimes(2);
+});
+
+it("an email-gallery visit settles the paid draft and allows a fresh purchase of the same look", async () => {
+  await service.checkout(draft, "buyer@example.com");
+  api.listJobs.mockResolvedValue([{ ...job(), orderId: "order_1" }]);
+  api.reconcileWebCheckout.mockResolvedValue(checkout("fulfilled"));
+  const reopened = new LiveStudioService(async () => api as API, namespace);
+  const state = await reopened.read();
+  expect(state.shoots).toHaveLength(1);
+  expect(state.draft).toBeNull();
+  expect(state.savedSelfies?.references).toEqual(draft.references);
+  await reopened.startDraft("paris", "w", "casual");
+  let next = (await reopened.read()).draft!;
+  expect(next.checkoutKey).not.toBe(draft.checkoutKey);
+  await reopened.updateDraft(next, { consent: true });
+  next = (await reopened.read()).draft!;
+  api.createOrder.mockResolvedValue({ orderId: "order_2" });
+  api.beginWebCheckout.mockResolvedValue({ ...checkout(), orderId: "order_2" });
+  expect(await reopened.checkout(next, "buyer@example.com")).toMatchObject({ orderId: "order_2", state: "open" });
+  expect(api.cancelWebCheckout).not.toHaveBeenCalled();
+});
+
+it("the storefront handoff settles an earlier purchase before reusing the same look", async () => {
+  await service.checkout(draft, "buyer@example.com");
+  api.listJobs.mockResolvedValue([{ ...job(), orderId: "order_1" }]);
+  api.reconcileWebCheckout.mockResolvedValue(checkout("fulfilled"));
+  const reopened = new LiveStudioService(async () => api as API, namespace);
+  await reopened.startDraft("paris", "w", "casual");
+  const next = (await reopened.read()).draft!;
+  expect(next.checkoutKey).not.toBe(draft.checkoutKey);
+  expect(next.reusedSelfies).toBe(true);
+});
+
+it("receipt lookup failure does not hide a readable gallery or discard its draft", async () => {
+  await service.checkout(draft, "buyer@example.com");
+  api.listJobs.mockResolvedValue([{ ...job(), orderId: "order_1" }]);
+  api.reconcileWebCheckout.mockRejectedValue(new Error("temporary outage"));
+  const reopened = new LiveStudioService(async () => api as API, namespace);
+  const state = await reopened.read();
+  expect(state.shoots).toHaveLength(1);
+  expect(state.draft?.checkoutKey).toBe(draft.checkoutKey);
+});
+
+it("editing an old checkout preserves a newer draft from another tab", async () => {
+  await service.checkout(draft, "old@example.com");
+  await local.updateDraft(draft, { wearsGlasses: true, email: "new@example.com" });
+  const changed = (await local.read()).draft;
+  await expect(service.editCheckout({ orderId: "order_1" })).resolves.toBeUndefined();
+  expect((await local.read()).draft).toEqual(changed);
+  expect(api.cancelWebCheckout).toHaveBeenCalledExactlyOnceWith("order_1");
+});
+
+it("a failed local edit keeps the expired checkout recoverable for another attempt", async () => {
+  await service.checkout(draft, "buyer@example.com");
+  const reopen = vi.spyOn(LocalStudioService.prototype, "reopenCheckout").mockRejectedValueOnce(new Error("storage unavailable"));
+  try {
+    await expect(service.editCheckout({ orderId: "order_1" })).rejects.toThrow("storage unavailable");
+    const db = await openDB(`${namespace}-operations`);
+    expect((await db.getAll("attempts"))[0].orderId).toBe("order_1");
+    await expect(service.editCheckout({ orderId: "order_1" })).resolves.toBeUndefined();
+    expect((await local.read()).draft?.checkoutKey).not.toBe(draft.checkoutKey);
+  } finally { reopen.mockRestore(); }
+});
+
+it("another tab closes a checkout whose creation response is still in flight before replacing it", async () => {
+  let reply!: (value: unknown) => void;
+  api.beginWebCheckout.mockImplementationOnce(() => new Promise(resolve => { reply = resolve; }));
+  const old = service.checkout(draft, "buyer@example.com");
+  const oldResult = expect(old).rejects.toThrow("changed");
+  await vi.waitFor(() => expect(api.beginWebCheckout).toHaveBeenCalledTimes(1));
+  const other = new LiveStudioService(async () => api as API, namespace);
+  await other.updateDraft(draft, { wearsGlasses: true });
+  api.createOrder.mockResolvedValue({ orderId: "order_2" });
+  api.beginWebCheckout.mockResolvedValue({ ...checkout(), orderId: "order_2" });
+  expect(await other.checkout((await local.read()).draft!, "buyer@example.com")).toMatchObject({ orderId: "order_2" });
+  expect(api.cancelWebCheckout).toHaveBeenCalledExactlyOnceWith("order_1");
+  reply(checkout());
+  await oldResult;
+  const db = await openDB(`${namespace}-operations`);
+  expect((await db.getAll("attempts")).map(value => value.orderId)).toEqual(["order_2"]);
+});
+
+it("a replacement fences an old upload that finishes late before it can create payment", async () => {
+  let uploaded!: (value: unknown) => void;
+  api.uploadReferences.mockImplementationOnce(() => new Promise(resolve => { uploaded = resolve; }));
+  const old = service.checkout(draft, "buyer@example.com");
+  const oldResult = expect(old).rejects.toThrow("recovery could not be verified");
+  await vi.waitFor(() => expect(api.uploadReferences).toHaveBeenCalledTimes(1));
+  const other = new LiveStudioService(async () => api as API, namespace);
+  await other.updateDraft(draft, { wearsGlasses: true });
+  expect(await other.checkout((await local.read()).draft!, "buyer@example.com")).toMatchObject({ state: "open" });
+  uploaded({ sessionId: "late_upload" });
+  await oldResult;
+  expect(api.createOrder).toHaveBeenCalledTimes(1);
+  expect(api.beginWebCheckout).toHaveBeenCalledTimes(1);
+});
+
+it("simultaneous replacement attempts share one checkpoint and close only the prior order", async () => {
+  await service.checkout(draft, "buyer@example.com");
+  await service.updateDraft(draft, { wearsGlasses: true });
+  const changed = (await local.read()).draft!;
+  const other = new LiveStudioService(async () => api as API, namespace);
+  api.createOrder.mockResolvedValue({ orderId: "order_2" });
+  api.beginWebCheckout.mockResolvedValue({ ...checkout(), orderId: "order_2" });
+  await Promise.all([service.checkout(changed, "buyer@example.com"), other.checkout(changed, "buyer@example.com")]);
+  expect(api.cancelWebCheckout.mock.calls.every(([id]: [string]) => id === "order_1")).toBe(true);
+  const db = await openDB(`${namespace}-operations`);
+  expect((await db.getAll("attempts")).map(value => value.orderId)).toEqual(["order_2"]);
+  const replacementUploads = api.uploadReferences.mock.calls.slice(1);
+  expect(new Set(replacementUploads.map((call: any[]) => call[1])).size).toBe(1);
+});
+
+it("gallery settlement preserves a newer draft and requires its earlier payment to be resolved", async () => {
+  await service.checkout(draft, "buyer@example.com");
+  await local.startDraft("paris", "w", "chic");
+  const newer = (await local.read()).draft;
+  api.listJobs.mockResolvedValue([{ ...job(), orderId: "order_1" }]);
+  api.reconcileWebCheckout.mockResolvedValue(checkout("fulfilled"));
+  const reopened = new LiveStudioService(async () => api as API, namespace);
+  const state = await reopened.read();
+  expect(state.draft).toEqual(newer);
+  expect(state.savedSelfies).toBeUndefined();
+  expect(api.reconcileWebCheckout).not.toHaveBeenCalled();
+  api.cancelWebCheckout.mockResolvedValue(checkout("fulfilled"));
+  expect(await reopened.checkout(newer!, "buyer@example.com")).toMatchObject({ orderId: "order_1", state: "fulfilled" });
+  expect(api.beginWebCheckout).toHaveBeenCalledTimes(1);
+});

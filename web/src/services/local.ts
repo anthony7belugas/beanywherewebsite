@@ -211,11 +211,12 @@ export class LocalStudioService implements StudioService {
       }
     });
   }
-  async reopenCheckout(review: CheckoutReview, email?: string) {
+  async reopenCheckout(review: CheckoutReview, email?: string, preserveNewerDraft = false) {
     await this.mutate(s => {
       if (!s.draft || s.draft.checkoutKey !== review.checkoutKey
           || s.draft.referenceVersion !== review.referenceVersion
           || s.draft.wearsGlasses !== review.wearsGlasses) {
+        if (preserveNewerDraft) return;
         throw new Error("Your selfies changed. Review your current shoot before continuing.");
       }
       // A cancelled payment gets a new order identity while keeping the customer's selection.

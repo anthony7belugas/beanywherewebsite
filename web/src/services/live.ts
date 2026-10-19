@@ -10,6 +10,7 @@ type API = ReturnType<typeof createFirebaseAdapter>;
 type Attempt = {
   schemaVersion: 1; uid: string; key: string; review: CheckoutReview; email: string;
   attribution?: Acquisition; draft: Draft; uploadAttempt: string; uploadSessionId?: string; orderId?: string;
+  settled?: "fulfilled" | "refunded";
 };
 const reviewKey = (review: CheckoutReview) =>
   `${review.checkoutKey}:${review.referenceVersion}:${review.wearsGlasses ? 1 : 0}`;
@@ -62,6 +63,7 @@ export class LiveStudioService implements StudioService {
   private recoveryEmail = "";
   private recoveryEpoch = 0;
   private galleryRefresh?: Promise<void>;
+  private settlingGalleries?: Promise<void>;
   private allJobs() {
     return [...new Map([...this.recoveredJobs, ...this.jobs].map(job => [job.id, job])).values()]
       .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
@@ -99,13 +101,32 @@ export class LiveStudioService implements StudioService {
     })().catch(error => { this.watching = undefined; throw error; });
   }
   async read() {
-    const state = await this.local.read();
+    await this.local.read();
     await this.startWatching();
     if (this.watchError) throw this.watchError;
+    await this.settleGalleryPurchases();
+    const state = await this.local.read();
     const api = await this.api();
     this.favorites = (await (await this.database()).get("favorites", api.session.uid)) || {};
     return { ...state, recoveryEmail: this.recoveryEmail, shoots: this.allJobs().filter(job => !!packById(job.packId))
       .map(job => projectWebJob(job, this.favorites)) };
+  }
+  private settleGalleryPurchases() {
+    return this.settlingGalleries ??= (async () => {
+      const draft = (await this.local.read()).draft;
+      if (!draft) return;
+      const api = await this.api();
+      const orders = new Set(this.jobs.filter(job => job.uid === api.session.uid).map(job => job.orderId));
+      const attempts = await (await this.database()).getAll("attempts") as Attempt[];
+      for (const attempt of attempts) {
+        if (attempt.uid === api.session.uid && !attempt.settled && attempt.orderId
+            && reviewKey(attempt.review) === reviewKey(draft) && orders.has(attempt.orderId)) {
+          // A gallery is a reason to check the receipt, never payment authority itself.
+          // An unavailable receipt must not prevent an already-readable gallery opening.
+          await this.payment(attempt.orderId).catch(() => {});
+        }
+      }
+    })().finally(() => { this.settlingGalleries = undefined; });
   }
   private async galleryPages(first: GalleryPage) {
     const api = await this.api();
@@ -151,8 +172,11 @@ export class LiveStudioService implements StudioService {
     if (patch.references || patch.wearsGlasses !== undefined || patch.consent === false) this.checkoutAbort?.abort();
     return this.local.updateDraft(review, patch);
   }
-  startDraft(packId: string, styling: Styling, styleId: string) {
-    this.checkoutAbort?.abort(); return this.local.startDraft(packId, styling, styleId);
+  async startDraft(packId: string, styling: Styling, styleId: string) {
+    this.checkoutAbort?.abort();
+    await this.startWatching();
+    await this.settleGalleryPurchases();
+    return this.local.startDraft(packId, styling, styleId);
   }
   setStyling(styling: Styling) { return this.local.setStyling(styling); }
   private async current(review: CheckoutReview, signal: AbortSignal) {
@@ -197,14 +221,40 @@ export class LiveStudioService implements StudioService {
     const api = await this.api();
     const key = `${api.session.uid}/${reviewKey(review)}`;
     const db = await this.database();
-    const tx = db.transaction("attempts", "readwrite");
-    let attempt = await tx.store.get(key) as Attempt | undefined;
-    if (!attempt) {
-      attempt = { schemaVersion: 1, uid: api.session.uid, key, review, email,
-        attribution: currentAttribution(), draft: structuredClone(draft), uploadAttempt: crypto.randomUUID() };
-      await tx.store.add(attempt, key);
+    let attempt: Attempt | undefined;
+    for (let tries = 0; tries < 25; tries++) {
+      await this.current(review, signal);
+      // Claim and scan in one transaction: another tab cannot insert a different
+      // checkout between checking for an earlier payment and saving this attempt.
+      const tx = db.transaction("attempts", "readwrite");
+      const attempts = await tx.store.getAll() as Attempt[];
+      const earlier = attempts.find(value => value.uid === api.session.uid && value.key !== key && !value.settled);
+      if (!earlier) {
+        attempt = attempts.find(value => value.key === key);
+        if (!attempt) {
+          attempt = { schemaVersion: 1, uid: api.session.uid, key, review, email,
+            attribution: currentAttribution(), draft: structuredClone(draft), uploadAttempt: crypto.randomUUID() };
+          await tx.store.add(attempt, key);
+        }
+      }
+      await tx.done;
+      if (!earlier) break;
+      if (earlier.orderId) {
+        const closed = await api.cancelWebCheckout(earlier.orderId);
+        if (["creating", "open"].includes(closed.state)) {
+          throw new Error("We could not close your earlier checkout. Check its payment status before trying again.");
+        }
+        if (closed.state === "fulfilled") await this.finishDraft(earlier);
+        if (closed.state === "refunded") await this.markSettled(earlier, "refunded");
+        else if (closed.state !== "expired") {
+          // Payment can win the race. Open its status/gallery instead of charging
+          // again for an edit; leave the customer's newer draft intact.
+          return result(closed);
+        }
+      }
+      await this.releaseAttempt(earlier);
     }
-    await tx.done;
+    if (!attempt) throw new Error("Your checkout changed in another tab. Review it and try again.");
     if (attempt.uid !== api.session.uid || attempt.email !== email || attempt.schemaVersion !== 1) {
       throw new Error("Resume this checkout using its original delivery email.");
     }
@@ -246,11 +296,26 @@ export class LiveStudioService implements StudioService {
   }
   private async finishDraft(attempt: Attempt) {
     await this.local.completeCheckout(attempt.review, attempt.email);
+    await this.markSettled(attempt, "fulfilled");
+  }
+  private async markSettled(attempt: Attempt, settled: "fulfilled" | "refunded") {
     const db = await this.database();
     const tx = db.transaction("attempts", "readwrite");
     const current = await tx.store.get(attempt.key) as Attempt | undefined;
-    if (current?.uid === attempt.uid && current.orderId === attempt.orderId) {
-      await tx.store.put({ ...current, draft: { ...current.draft, references: [] } }, attempt.key);
+    if (current?.uid === attempt.uid && current.uploadAttempt === attempt.uploadAttempt && current.orderId === attempt.orderId) {
+      await tx.store.put({ ...current, settled, draft: { ...current.draft, references: [] } }, attempt.key);
+    }
+    await tx.done;
+  }
+  private async releaseAttempt(attempt: Attempt) {
+    const db = await this.database();
+    const tx = db.transaction(["attempts", "orders"], "readwrite");
+    const current: Attempt | undefined = await tx.objectStore("attempts").get(attempt.key);
+    // If an in-flight request just saved an order ID, the caller must reread and
+    // close that server order before its checkpoint can be discarded.
+    if (current?.uid === attempt.uid && current.uploadAttempt === attempt.uploadAttempt && current.orderId === attempt.orderId) {
+      await tx.objectStore("attempts").delete(attempt.key);
+      if (attempt.orderId) await tx.objectStore("orders").delete(`${attempt.uid}/${attempt.orderId}`);
     }
     await tx.done;
   }
@@ -309,19 +374,13 @@ export class LiveStudioService implements StudioService {
           throw new Error("This checkout could not be reopened. Check your payment status before paying again.");
         }
       }
-      const tx = db.transaction(["attempts", "orders"], "readwrite");
-      const current: Attempt | undefined = await tx.objectStore("attempts").get(attempt.key);
-      if (current?.uploadAttempt !== attempt.uploadAttempt || current.orderId !== attempt.orderId) {
-        await tx.done;
-        throw new Error("Your checkout changed in another tab. Try editing it again.");
-      }
-      await tx.objectStore("attempts").delete(attempt.key);
-      if (attempt.orderId) await tx.objectStore("orders").delete(`${api.session.uid}/${attempt.orderId}`);
-      await tx.done;
     }
     const review = attempt?.review || input.review;
     if (!review) throw new Error("Review your selfies before continuing.");
-    await this.local.reopenCheckout(review, attempt?.email);
+    // Reopen first so a failed local write leaves the recovery record available.
+    // A newer draft in another tab is already editable and must be preserved.
+    await this.local.reopenCheckout(review, attempt?.email, true);
+    if (attempt) await this.releaseAttempt(attempt);
   }
   async setFavorite(shootId: string, slotId: string, favorite: boolean) {
     const api = await this.api();
