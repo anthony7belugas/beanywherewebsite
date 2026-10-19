@@ -38,7 +38,7 @@
 .santorini-print { transform: rotate(5deg); margin-top: 84px; }
 .photo-print figcaption { display: flex; justify-content: space-between; align-items: baseline; padding: 9px 3px 11px; font-size: 10px; letter-spacing: 1px; }
 .photo-print figcaption span { font-family: var(--serif); font-size: 20px; letter-spacing: -.5px; }
-.preview-note { color: var(--dim); text-align: center; font-size: 11px; margin: 36px 0 0 !important; }
+.preview-note { color: var(--dim); text-align: center; font-size: 12px; margin: 36px 0 0 !important; }
 .how-section { border-top: 1px solid var(--line); padding-block: 64px 72px; scroll-margin-top: 24px; }
 .section-heading { max-width: 670px; }
 .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 42px; list-style: none; padding: 0; margin: 42px 0 0; }
@@ -47,11 +47,11 @@
 .steps p { margin-bottom: 0; color: var(--dim); font-size: 15px; }
 .app-section { background: #e9e1d5; color: #30261d; padding-block: 64px 34px; }
 .app-heading { display: flex; justify-content: space-between; align-items: end; gap: 32px; margin-bottom: 36px; }
-.app-section .eyebrow { color: #75634c; }
+.app-section .eyebrow { color: #705d47; }
 .app-heading > p { color: #665745; font-size: 14px; margin-bottom: 3px; flex-shrink: 0; }
 .screenshots { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; }
 .screenshots img { display: block; width: 100%; height: auto; box-shadow: 0 6px 20px #30261d0d; }
-.screenshots-note { color: #75634c; text-align: center; font-size: 11px; margin: 24px 0 0 !important; }
+.screenshots-note { color: #705d47; text-align: center; font-size: 12px; margin: 24px 0 0 !important; }
 .swipe-hint { display: none; }
 .pack-section { display: grid; grid-template-columns: 1.1fr 1fr; gap: 100px; padding-block: 88px; align-items: center; }
 .pack-copy > p:not(.eyebrow) { color: var(--dim); font-size: 16px; max-width: 390px; margin-top: 24px; margin-bottom: 0; }
@@ -63,7 +63,7 @@
 .pack-includes { list-style: none; padding: 0; margin: 0 0 28px; color: var(--dim); font-size: 14px; }
 .pack-includes li { margin-bottom: 8px; }
 .pack-includes strong { color: var(--text); font-weight: 500; }
-.price-note { color: var(--dim); font-size: 11px; margin: 13px 0 0 !important; }
+.price-note { color: var(--dim); font-size: 12px; margin: 13px 0 0 !important; }
 .questions-section { display: grid; grid-template-columns: 1fr 1.3fr; gap: 72px; border-top: 1px solid var(--line); padding-block: 60px 80px; }
 .questions-section h2 { max-width: 350px; font-size: 34px; }
 .questions details { border-bottom: 1px solid var(--line); }
@@ -116,7 +116,7 @@
   .hero-visual { padding-top: 0; max-width: 480px; width: 100%; justify-self: center; }
   .photo-pair { padding-inline: 10px; gap: 18px; }
   .santorini-print { margin-top: 48px; }
-  .preview-note { margin-top: 28px !important; font-size: 10px; }
+  .preview-note { margin-top: 28px !important; font-size: 12px; }
   .landing h2 { letter-spacing: -1.1px; font-size: 34px; }
   .how-section { padding-block: 42px 46px; }
   .landing .eyebrow { font-size: 10px; letter-spacing: 1.5px; margin-bottom: 16px; }
@@ -129,10 +129,10 @@
   .app-heading { display: block; margin-bottom: 26px; }
   .app-heading > p { max-width: none; margin: 16px 0 0; }
   .app-heading > p br { display: none; }
-  .swipe-hint { display: block; font-size: 12px; color: #75634c; margin-bottom: 13px; }
+  .swipe-hint { display: block; font-size: 12px; color: #705d47; margin-bottom: 13px; }
   .screenshots { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: min(76vw, 300px); overflow-x: auto; scroll-snap-type: x mandatory; gap: 16px; padding-bottom: 16px; scrollbar-color: #aa9173 #dcd1c2; scrollbar-width: thin; }
   .screenshots img { scroll-snap-align: start; }
-  .screenshots-note { text-align: left; font-size: 10px; margin-top: 16px !important; }
+  .screenshots-note { text-align: left; font-size: 12px; margin-top: 16px !important; }
   .pack-section { grid-template-columns: 1fr; gap: 32px; padding-block: 48px; }
   .pack-copy > p:not(.eyebrow) { margin-top: 19px; font-size: 15px; }
   .pack-offer { border-left: 0; border-top: 1px solid var(--line); padding: 28px 0 0; }
