@@ -1,37 +1,59 @@
-# Web studio rollout status
+# Web studio rollout
 
-This directory is saved source on `codex/web-studio`. It is not published by the
-existing website. `src/App.tsx` selects the live service only with explicit live
-configuration. Production builds fail without the dedicated Firebase and App
-Check settings. Use `npm run build:draft` for a disconnected preview.
+Updated October 18, 2026. The backend is deployed to `bethere-3d7de` and the
+compiled studio is published at `https://beanywhere.app/studio/` through the
+existing Cloudflare Pages project. **Public sales are not yet enabled.**
 
-The Firebase integration now uses the dedicated BeAnywhere Web Studio app and a
-separate named Firebase auth store. It requires verified web claims and App Check,
-persists one browser identity across tabs, and calls the server's checkout API
-with the frozen order ID and delivery email. All payment results are read from
-the server. The UI must not infer success from a Stripe return URL.
+`config/web` is temporarily in Stripe test mode and accepts checkout only for
+the explicitly allowlisted test browser. The homepage launch links are prepared
+locally but must not be published until the end-to-end test passes and the config
+returns to live mode. A browser confirmation to accept the test checkout terms
+is pending. No successful customer payment, photo generation or automatic email
+has yet been verified end-to-end.
 
-Upload recovery recognizes completed and finalizing server sessions. It does not
-overwrite a completed upload after an acknowledgement is lost.
+## Connections
 
-The live service now uploads reviewed selfies, freezes and persists the order,
-opens the server-created Stripe checkout, and shows actual server photo progress.
-Duplicate taps and ambiguous responses reuse the saved attempt. Downloads use
-authorized storage reads and recheck access before saving. Paid gallery access
-and payment retry keys survive clearing local draft data.
+- Separate Firebase web app: `1:151223255006:web:7313193eb6302e7582674f`.
+- reCAPTCHA Enterprise App Check is configured for beanywhere.app and www.
+- Web identities use the separate `WEB_SESSION_PEPPER`, `w_` UIDs, web claims and
+  named browser auth persistence. Native identities and purchasing stay separate.
+- Stripe account: `acct_1US8Ls0oVroaUZP0`, charges and payouts enabled. Radar Lite;
+  no Tax, Climate or Managed Payments upgrades.
+- Live price: `price_1US9iC0oVroaUZP0VgwYznMp`, one-time $3.99 USD.
+- Test price: `price_1US9zM0oVroaUZP0phpoHZVJ`.
+- Restricted runtime keys and webhook signing secrets live only in Google Secret
+  Manager. Live and sandbox credentials are separate.
+- RevenueCat web config: `appb5f40f18d3`. The live product is imported. External
+  receipts use the Stripe public key, including external sandbox receipts; the
+  RevenueCat sandbox API key is specifically not for external receipt submission.
+- Paid checkout creates one generation job and a durable automatic delivery
+  intent. Existing generation and Resend workers provide bounded retries. Receipt
+  reporting to RevenueCat cannot create another generation job.
+- Server business and client funnel events identify platform `web`. Sandbox
+  client behavior is excluded from production aggregate conversion totals.
 
-The official RevenueCat Stripe app is connected to the separate BeAnywhere Web
-configuration. The restricted live Stripe key is stored in Google Cloud Secret
-Manager as `STRIPE_SECRET_KEY` (version 1), and a read-only account request verified
-the correct account with payments and payouts enabled. This is not a completed
-checkout or a live release. No secret value belongs in browser configuration.
+## Build and release
 
-Remaining release work includes automatic email delivery and gallery recovery,
-Firebase/App Check configuration, Stripe/RevenueCat products and webhooks,
-sandbox end-to-end checks, and a separate Cloudflare Pages build
-step to publish the finished studio under `/studio/` while preserving the site.
-Copy the generated `_headers` into the deployment root and merge existing rules;
-Cloudflare will not apply a `_headers` file left inside `/studio/`.
+1. Provide the public Firebase/App Check values in ignored `.env.production.local`.
+2. From this directory, run `npm ci`, `npm run check`, then `npm run build`.
+3. From the repository root, run `node web/scripts/sync-static.mjs`.
+4. Review and commit `studio/` and the root `_headers` with source changes.
+5. Push the reviewed website revision to `main`; Cloudflare Pages serves `/`.
 
-Verified locally: TypeScript, 132 frontend tests, and the explicit draft build.
-These checks do not establish that live payments, email, or generation work.
+The Firebase browser API key is intentionally public, restricted to Firebase
+services, and cannot substitute for auth, Rules or App Check. GitHub secret alert
+1 was verified against this public configuration and resolved as a false positive.
+Never add Stripe secrets, webhook secrets or service-account private keys here.
+
+## Verified so far
+
+- 248 backend release checks, including both native production bundles.
+- 134 frontend tests, TypeScript and live production build.
+- Actual deployed App Check, browser custom sign-in and private gallery query.
+- Website security headers and Firebase Storage CORS.
+- Private credential pattern scan of all 399 tracked site files: zero matches.
+
+Next: sandbox checkout → signed webhook → one real job → photo delivery →
+RevenueCat receipt sync, retry/refund checks, live configuration, homepage links,
+and a final production browser smoke test. Do not represent local tests as proof
+that the entire deployed payment/delivery flow works.

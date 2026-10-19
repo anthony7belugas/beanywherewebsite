@@ -1,0 +1,10 @@
+import { cp, readFile, rm, copyFile } from 'node:fs/promises';
+const root = new URL('../../', import.meta.url);
+const dist = new URL('../dist/', import.meta.url);
+const html = await readFile(new URL('index.html', dist), 'utf8');
+if (!html.includes('content-firebaseappcheck.googleapis.com')) throw new Error('Build the live studio before syncing production files.');
+await rm(new URL('studio/', root), { recursive: true, force: true });
+await cp(dist, new URL('studio/', root), { recursive: true });
+await copyFile(new URL('_headers', dist), new URL('_headers', root));
+await rm(new URL('studio/_headers', root));
+console.log('Synced live assets to /studio and its security headers to the site root.');
