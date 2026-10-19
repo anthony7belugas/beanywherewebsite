@@ -1,11 +1,11 @@
-// Website legal text for BeAnywhere on Apple devices and Android.
+// Website legal text for BeAnywhere on Apple devices, Android, and the web.
 // Generate privacy.html and terms.html with `node generate.mjs` after editing.
 // Compare changes with the app's legal.ts and platformLegal.ts; do not overwrite
 // this file with the Apple-only source and lose the Android or support disclosures.
 
 export const LEGAL_INFO = {
   name: 'Besties, Inc.',                     // registered entity (matches your approved Besties docs)
-  effectiveDate: 'October 10, 2026',
+  effectiveDate: 'October 18, 2026',
   supportEmail: 'support@beanywhere.app', // your real support address
   accountDeletionUrl: 'https://beanywhere.app/support#delete-account',
   state: 'California',                       // your home state
@@ -17,8 +17,8 @@ const I = LEGAL_INFO;
 
 export const PRIVACY = [
   { body: [
-    `This Privacy Policy explains how ${I.name} (“BeAnywhere,” “we,” “us”) collects, uses, and protects your information when you use the BeAnywhere mobile app (the “App”). BeAnywhere lets you upload photos of yourself and generates stylized, AI-created images of you in different scenes. This Policy explains our practices; it does not replace a separate permission where one is required.`,
-    `This Policy covers the App on Apple devices and Android. Sign-in and payment providers depend on the platform, as described below.`,
+    `This Privacy Policy explains how ${I.name} (“BeAnywhere,” “we,” “us”) collects, uses, and protects your information when you use the BeAnywhere mobile app and web studio (together, the “App”). BeAnywhere lets you upload photos of yourself and generates stylized, AI-created images of you in different scenes. This Policy explains our practices; it does not replace a separate permission where one is required.`,
+    `This Policy covers the App on Apple devices, Android, and the web. Sign-in and payment providers depend on the platform, as described below.`,
     `We built BeAnywhere to do one thing with your photos — make fun images of you — and to hold onto as little as possible for as short a time as possible.`,
   ] },
   { title: '1. The short version', body: [
@@ -34,7 +34,7 @@ export const PRIVACY = [
     `Device identifier. When you first open the App, we create an anonymous identifier stored securely on your device. This is how your packs are associated with you and restored when you reopen the App. It is not your name and does not by itself identify you in the real world.`,
     `Sign in with Apple (optional, on Apple devices). Signing in is optional and is offered only so your packs can follow you to a new Apple device. If you choose it, we receive the name and email you authorize Apple to share — which may be Apple’s private relay email if you choose to hide your address. We do not automatically email packs to that address. Pack email is a separate action: you type or confirm a delivery address and tap Send photos for each pack. You can use the App fully without ever signing in.`,
     `Sign in with Google (optional, on Android). Signing in is optional and lets you restore your packs on another Android device. If you choose it, we receive your Google account identifier and the name and email Google provides. We use the verified account identifier to connect your packs. Google sign-in does not grant us access to Gmail, Google Drive, or your Google Photos library. We do not automatically email packs to your Google address. Pack email is a separate action: you type or confirm a delivery address and tap Send photos for each pack. You can use the App fully without signing in with Google.`,
-    `Purchase information. When you buy a pack, the purchase is processed through Apple’s in-app purchase on Apple devices or Google Play billing on Android. We receive purchase confirmations and transaction information to verify purchases, deliver packs, and handle purchase status and refunds, with help from RevenueCat. We do not receive or store your credit-card number — the applicable store handles payment.`,
+    `Purchase information. When you buy a pack, the purchase is processed through Apple’s in-app purchase on Apple devices or Google Play billing on Android. We receive purchase confirmations and transaction information to verify purchases, deliver packs, and handle purchase status and refunds, with help from RevenueCat. We do not receive or store your credit-card number — the applicable store or Stripe handles payment.`,
     `Operational records. We keep the purchase, refund, delivery, generation-cost, and security records needed to operate the service and reconcile the business. Selected women’s or men’s styling describes a product choice, not an inference about your gender.`,
     `Product analytics. We use Google Analytics for Firebase (GA4) and our own event service to understand visits, pack selection, uploads, checkout, photo saves, and return visits. We send an opaque analytics identifier, app-instance identifiers, app/device information, and fixed product/event parameters. Google may derive approximate location from network information. We do not send your photos, image URLs, email, Apple or Google sign-in credential, or device-ban identity to GA4. Advertising identifiers and advertising-personalization signals are disabled.`,
     `Crash diagnostics. We use Firebase Crashlytics to receive crash and device/app diagnostic information so we can identify and fix reliability problems. We report handled errors using a fixed context and error category instead of the original sensitive message, and do not attach your account ID, email, photos, or image URLs. Native crash reports include diagnostic installation identifiers and stack information.`,
@@ -44,7 +44,7 @@ export const PRIVACY = [
   { title: '3. How we use your information', body: [
     `We use the information above to:`,
     `• generate your AI images and deliver, display, and restore your packs;`,
-    `• process your purchases (via Apple or Google Play, depending on your platform) and provide any credits or re-shoots you’re owed;`,
+    `• process your purchases (via Apple, Google Play, or Stripe, depending on your platform) and provide any credits or re-shoots you’re owed;`,
     `• respond to your support requests;`,
     `• understand how the App is used, measure product performance, and improve reliability;`,
     `• keep the App secure, prevent abuse, and fix problems;`,
@@ -77,11 +77,12 @@ export const PRIVACY = [
     `We use a small number of trusted service providers that process data on our behalf, only to run the App:`,
     `• Apple — in-app purchases and, if you choose it, Sign in with Apple on Apple devices.`,
     `• Google — Google Play billing and, if you choose it, Sign in with Google on Android.`,
-    `• RevenueCat — purchase verification and purchase-status handling.`,
+    `• RevenueCat — purchase verification, web purchase reporting, and purchase-status handling.`,
     `• Our AI image-generation provider (currently OpenAI) — to perform image generation and related safety and abuse checks. OpenAI states that API data is not used to train its models unless the API customer opts in; we do not opt in. OpenAI may temporarily retain or review content for abuse monitoring, safety, security, or legal obligations under its applicable policies.`,
     `• Google Firebase / Google Cloud — authentication, database, file storage, server functions, GA4 usage analytics, and Crashlytics diagnostics used to run and improve the App.`,
     `• Expo — app updates and, if you enable notifications, push-notification delivery.`,
-    `• Resend — delivery of your pack by email if you ask us to email it to you. Resend and your email provider may retain that sent or delivered message under their applicable policies; in-app deletion cannot recall it.`,
+    `• Stripe — hosted web checkout, payment processing, receipts, and fraud prevention. Stripe receives your checkout email and payment details. Cloudflare hosts our website, and Google reCAPTCHA Enterprise helps protect web requests against automated abuse.`,
+    `• Resend — delivery of your pack by email when requested in the mobile app or automatically to the delivery email you provide at web checkout. Resend and your email provider may retain that sent or delivered message under their applicable policies; in-app deletion cannot recall it.`,
     `These providers are bound by their own terms and privacy commitments and are not permitted to use your data for their own unrelated purposes. We may also disclose information if required by law, to enforce our Terms, or to protect rights and safety. We do not sell your personal information.`,
   ] },
   { title: '7. Your rights and choices', body: [
@@ -90,6 +91,12 @@ export const PRIVACY = [
     `• Request deletion by email: You can also request deletion of your BeAnywhere account and associated data by emailing ${I.supportEmail}, including if you no longer have the App. See ${I.accountDeletionUrl} for instructions. The same deletion and retention details described in this Policy apply.`,
     `• California residents (CCPA/CPRA): You have the right to know what personal information we collect, to access and delete it, to correct it, and to limit the use of sensitive personal information (which can include facial images). We do not sell or share your personal information for cross-context behavioral advertising. To exercise these rights, use the in-app deletion option or email us. We will not discriminate against you for exercising your rights.`,
     `• Other states / regions: If your jurisdiction grants similar rights, you may contact us to exercise them.`,
+  ] },
+  { title: 'Web studio details', body: [
+    `The web studio creates a separate browser identity. It does not require Google sign-in or automatically combine purchases with your Apple or Android account. A secure credential in your browser gives you access to that studio; entering an email address alone does not unlock photos. Clearing browser data or changing browsers can remove that access.`,
+    `At web checkout, we collect the delivery email you enter and automatically send completed photos there through Resend. Stripe processes your payment, and RevenueCat receives purchase information for reporting and reconciliation. Your email is not a marketing subscription. Keep your delivered email and order reference for access to your attachments or support.`,
+    `Web payment, checkout, delivery, and dispute records may include your email and are retained for fulfillment, support, accounting, and fraud prevention. This is an exception to the contact-free restricted transaction records described above. You can delete web photos in My studio or request account/contact deletion at ${I.supportEmail}; legally required payment records may remain with us and payment providers. Browser-local drafts can be removed in My studio or by clearing website data.`,
+    `We separate web activity from Apple and Android activity in operational and conversion reporting. Our business records track successful purchases and generation outcomes without sending your photos or email as analytics event parameters.`,
   ] },
   { title: '8. Children', body: [
     `BeAnywhere is intended for adults 18 and older. It is not directed to children, and we do not knowingly collect personal information from anyone under 18. If you believe a child has used the App, contact us and we will delete the information.`,
@@ -110,15 +117,15 @@ export const PRIVACY = [
 
 export const TERMS = [
   { body: [
-    `These Terms of Service (“Terms”) are a binding agreement between you and ${I.name} (“BeAnywhere,” “we,” “us”) governing your use of the BeAnywhere mobile app (the “App”). Please read Section 15 carefully — it requires most disputes to be resolved by individual arbitration and waives class actions, unless you opt out within 30 days.`,
-    `These Terms cover the App on Apple devices and Android. Platform-specific purchase terms apply to purchases made through that store, and Section 10 applies only to the App obtained from the Apple App Store.`,
+    `These Terms of Service (“Terms”) are a binding agreement between you and ${I.name} (“BeAnywhere,” “we,” “us”) governing your use of the BeAnywhere mobile app and web studio (together, the “App”). Please read Section 15 carefully — it requires most disputes to be resolved by individual arbitration and waives class actions, unless you opt out within 30 days.`,
+    `These Terms cover the App on Apple devices, Android, and the web. Platform-specific purchase terms apply to purchases made through that store, and Section 10 applies only to the App obtained from the Apple App Store.`,
     `By downloading or using the App, you agree to these Terms. If you don’t agree, don’t use the App.`,
   ] },
   { title: '1. Eligibility', body: [
     `You must be at least 18 years old to use BeAnywhere. By using the App you represent that you are 18 or older.`,
   ] },
   { title: '2. What BeAnywhere does', body: [
-    `BeAnywhere lets you upload photos of yourself and uses AI to generate stylized images of you in various scenes (“packs”). You buy packs through Apple’s in-app purchase on Apple devices or Google Play billing on Android. We may modify, add, remove, or discontinue packs, features, or the App itself, in whole or in part, at any time and without liability to you.`,
+    `BeAnywhere lets you upload photos of yourself and uses AI to generate stylized images of you in various scenes (“packs”). You buy packs through Apple’s in-app purchase on Apple devices, Google Play billing on Android, or Stripe checkout on the web. We may modify, add, remove, or discontinue packs, features, or the App itself, in whole or in part, at any time and without liability to you.`,
   ] },
   { title: '3. Your photos and your content', body: [
     `• You keep ownership of the photos you upload. You grant BeAnywhere a limited, non-exclusive license to use, process, and store your photos solely to provide the App’s features to you (generating, delivering, and restoring your packs) as described in our Privacy Policy.`,
@@ -135,6 +142,7 @@ export const TERMS = [
     `• Packs are sold as one-time, consumable in-app purchases through Apple on Apple devices or Google Play on Android, at the price shown in the App at the time of purchase. Payment is charged through the applicable store account.`,
     `• App Store purchases: Because packs are generated on demand, all sales are final except where a refund is required by law or granted by Apple. Refund requests for App Store purchases are handled by Apple under Apple’s policies.`,
     `• Google Play purchases: Refunds are subject to applicable law and Google Play’s refund policies. You can request a refund through Google Play or contact us for purchase support.`,
+    `• Web purchases: Packs are one-time purchases, not subscriptions, at the price shown in Stripe checkout. Provide an accurate delivery email; completed photos are automatically sent there. Your web studio is separate from mobile purchases. Generation and eligible retries run on our servers with limits; an interrupted browser connection does not require another purchase. If a paid shoot cannot be completed, contact ${I.supportEmail} with your order reference for resolution or refund support. Your rights under applicable law remain unchanged.`,
     `• If generation doesn’t finish as expected, the App provides eligible retries, replacement pack credits, and support options as described in the App.`,
     `• We may change prices prospectively; changes don’t affect purchases already made.`,
   ] },
@@ -151,7 +159,7 @@ export const TERMS = [
     `The App itself — including its software, design, branding, and the “BeAnywhere” name and logo — is owned by us and protected by law. These Terms don’t give you any rights in the App except the limited right to use it as intended. If you send us feedback, ideas, or suggestions, you grant us a perpetual, irrevocable, royalty-free license to use them without restriction or obligation to you.`,
   ] },
   { title: '9. Third-party services', body: [
-    `The App relies on Apple or Google Play and Google sign-in, depending on your platform and choices, as well as RevenueCat, our AI image-generation provider (currently OpenAI), Google Firebase/Cloud, Expo, and Resend to function as described in the Privacy Policy. Your use of these services may also be subject to the applicable provider’s terms. We aren’t responsible for third-party services we don’t control.`,
+    `The App relies on Apple or Google Play and Google sign-in, depending on your platform and choices, as well as RevenueCat, our AI image-generation provider (currently OpenAI), Google Firebase/Cloud, Expo, Resend, and (on the web) Stripe, Cloudflare, and Google reCAPTCHA Enterprise to function as described in the Privacy Policy. Your use of these services may also be subject to the applicable provider’s terms. We aren’t responsible for third-party services we don’t control.`,
   ] },
   { title: '10. Apple App Store — additional terms', body: [
     `These Terms are between you and ${I.name} only, and not with Apple Inc. (“Apple”). Apple is not responsible for the App or its content. To the extent these Terms apply to your use of the App obtained from the Apple App Store, you and we acknowledge:`,

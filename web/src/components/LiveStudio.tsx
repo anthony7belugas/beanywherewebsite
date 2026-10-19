@@ -82,7 +82,7 @@ export function PaymentReturn({ orderId, shoots }: { orderId: string; shoots: St
 export function LiveInfo({ type }: { type: "help" | "privacy" | "terms" }) {
   return <div className="prose">
     {type === "help" ? <><p className="lead">Upload, pay, and make it yours.</p><ol>
-      <li>Choose a destination and a look, then add 4–6 clear selfies of one consenting adult.</li>
+      <li>Choose a destination and a look, then add 4–6 clear selfies of yourself (18 or older).</li>
       <li>Enter your delivery email and pay once through Stripe. No Google login or subscription is required.</li>
       <li>Watch your photos arrive in My photos. Processing continues when you close this page, and your completed set is emailed to you automatically.</li>
       <li>Download your favorites. If something needs attention, contact support with your order reference.</li>
@@ -93,7 +93,7 @@ export function LiveInfo({ type }: { type: "help" | "privacy" | "terms" }) {
         <p>Use My studio to remove draft selfies or request deletion of all your uploaded and generated photos. Downloaded files remain on your device.</p>
         <a href="/privacy.html" target="_blank" rel="noreferrer">Full privacy policy</a></>
       : <><p className="lead">One photoshoot. One payment.</p>
-        <p>The checkout shows the final price in USD. BeAnywhere is for adults 18 and older. Upload only photos of yourself or another adult who explicitly agreed.</p>
+        <p>The checkout shows the final price in USD. BeAnywhere is for adults 18 and older. Upload only photos of yourself, with no other people in them.</p>
         <p>AI photos can contain imperfections. The server checks your payment and enforces the generation and reshoot limits. Contact support if your paid shoot cannot be completed.</p>
         <a href="/terms.html" target="_blank" rel="noreferrer">Full terms of service</a></>}
   </div>;
