@@ -90,7 +90,7 @@ export function LiveInfo({ type }: { type: "help" | "privacy" | "terms" }) {
       : type === "privacy" ? <><p className="lead">Your studio uses a private browser sign-in.</p>
         <p>Your browser keeps a secure sign-in so you can return to your photos. We also email your completed set as attachments. Keep that email if you change browsers or clear website data.</p>
         <p>After you continue to checkout, your selfies are uploaded for processing. Firebase stores your studio data, Stripe handles payment, and our AI provider generates your photos.</p>
-        <p>Use My studio to remove draft selfies or request deletion of all your uploaded and generated photos. Downloaded files remain on your device.</p>
+        <p>Use My photos → Photo settings to remove draft selfies or request deletion of all your uploaded and generated photos. Downloaded files remain on your device.</p>
         <a href="/privacy.html" target="_blank" rel="noreferrer">Full privacy policy</a></>
       : <><p className="lead">One photoshoot. One payment.</p>
         <p>The checkout shows the final price in USD. BeAnywhere is for adults 18 and older. Upload only photos of yourself, with no other people in them.</p>
@@ -108,7 +108,7 @@ export function LiveAccount({ state, notify }: { state: StudioState; notify: (te
     finally { setBusy(false); }
   }
   return <div className="prose">
-    <p className="lead">Your BeAnywhere studio</p>
+    <p className="lead">Photo settings</p>
     <p>{state.email || "Your delivery email is collected at checkout."}</p>
     <p>This browser signs you in automatically. Keep its website data to return to your paid photos.</p>
     <p><Download size={16} /> {state.shoots.length} photoshoots in this studio</p>

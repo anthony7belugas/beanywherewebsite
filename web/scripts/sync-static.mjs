@@ -8,3 +8,5 @@ await cp(dist, new URL('studio/', root), { recursive: true });
 await copyFile(new URL('_headers', dist), new URL('_headers', root));
 await rm(new URL('studio/_headers', root));
 console.log('Synced live assets to /studio and its security headers to the site root.');
+
+await import("./build-storefront.mjs");

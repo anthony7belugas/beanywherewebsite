@@ -77,3 +77,26 @@ checkout first, then restrict sandbox access to explicit test UIDs.
 To pause sales without affecting native apps, set only
 `config/web.checkoutEnabled` to false. Preserve existing paid orders and recovery
 workers. Stripe secrets stay in Secret Manager; no credential belongs in this repo.
+
+
+## Public storefront refresh — October 19, 2026
+
+The homepage now presents the six shoots directly. Public detail pages at
+`/shoots/<pack>/` are generated from the studio catalog, contain the offer and
+previews as static HTML, and have canonical URLs plus a sitemap. They do not wait
+for Firebase sign-in. `web/scripts/build-storefront.mjs` generates those pages and
+copies the source CSS/JS from `web/storefront/`; the normal static sync runs it.
+
+The public look picker hands only validated catalog choices to `/studio/` at the
+selfie step. It cannot set prices, identities, payment state or jobs. Opening the
+same selection retains the draft and checkout key; payment return parameters
+cannot trigger a public entry. Upload, payment verification, reshoots, email and
+native apps continue using the existing backend. Legacy studio home links return
+to the public homepage; private galleries remain excluded from search indexing.
+
+The plain Fraunces wordmark and real app favicon are shared across the flow.
+Navigation is How it works / My photos; Photo settings is accessible from My
+photos and the workflow footer. Mobile shoot pages keep the next action visible.
+Verification: 142 frontend checks, production build, public asset/link checks, and
+manual Chrome desktop/mobile review plus a disconnected upload/review journey.
+No new paid generation or real card transaction was run for this UI refresh.

@@ -3,7 +3,7 @@ import path from "node:path";
 
 async function start(page: import("@playwright/test").Page) {
   await page.goto("/#/shoot/paris");
-  await page.getByRole("button", { name: "Create my Paris shoot" }).click();
+  await page.getByRole("button", { name: "Add your selfies" }).click();
   await page.getByRole("button", { name: /Use demo photos/ }).click();
   await page.getByRole("checkbox", { name: /18 or older/ }).check();
   await page.getByRole("button", { name: "Review my shoot" }).click();
@@ -62,7 +62,7 @@ test("complete desktop journey, persistence, favorites, ZIP, reshoot and deletio
   await page.getByRole("button", { name: "Delete this shoot" }).click();
   await page.getByRole("button", { name: "Delete shoot", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "Your story starts here." }),
+    page.getByRole("heading", { name: "Your photos will appear here." }),
   ).toBeVisible();
   expect(remote).toEqual([]);
   expect(errors).toEqual([]);
@@ -76,7 +76,7 @@ test("phone upload validation, draft recovery and complete privacy wipe", async 
     .getByRole("button", { name: "Men’s styling", exact: true })
     .click();
   await page.locator('a.pack-card[href="#/shoot/miami"]').click();
-  await page.getByRole("button", { name: "Create my Miami shoot" }).click();
+  await page.getByRole("button", { name: "Add your selfies" }).click();
   await expect(
     page.getByRole("button", { name: "Review my shoot" }),
   ).toBeDisabled();
@@ -119,25 +119,20 @@ test("phone upload validation, draft recovery and complete privacy wipe", async 
   });
   await page.getByRole("button", { name: "Create my demo shoot" }).click();
   await expect(page).toHaveURL(/gallery/);
-  await page.getByRole("button", { name: "Open account and privacy" }).click();
+  await page.getByRole("button", { name: "Photo settings", exact: true }).click();
   await page.getByRole("button", { name: "Clear all local data" }).click();
   await page.getByRole("button", { name: "Clear everything" }).click();
   await expect(page).toHaveURL(/#\/$/);
   await page.getByRole("link", { name: "My photos", exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "Your story starts here." }),
+    page.getByRole("heading", { name: "Your photos will appear here." }),
   ).toBeVisible();
 });
-test("catalog filters, all looks, narrow layouts, and unknown routes", async ({
+test("catalog, all looks, narrow layouts, and unknown routes", async ({
   page,
 }) => {
   await page.goto("/");
   await expect(page.locator(".pack-card")).toHaveCount(6);
-  await page.getByRole("button", { name: "Escapes", exact: true }).click();
-  await expect(page.locator(".pack-card")).toHaveCount(4);
-  await page.getByRole("textbox", { name: "Search shoots" }).fill("nowhere");
-  await expect(page.getByText("No settings found.")).toBeVisible();
-  await page.getByRole("button", { name: "Show all shoots" }).click();
   for (const width of [320, 390, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     expect(

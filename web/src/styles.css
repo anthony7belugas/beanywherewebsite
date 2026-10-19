@@ -2744,3 +2744,41 @@ progress::-moz-progress-bar {
     transition: none !important;
   }
 }
+
+/* One shared brand and simple navigation across the storefront and private flow. */
+.header-inner { height:84px; display:flex; grid-template-columns:none; grid-template-rows:none; gap:24px; padding:0; }
+.wordmark { font-weight:600; font-size:30px; letter-spacing:-.5px; }
+.header nav { height:100%; margin:0 0 0 auto; gap:28px; font-size:14px; }
+.header nav a.active:after { display:none; }
+.header nav .how-link { color:var(--dim); }
+.compact-catalog { padding-top:38px; }
+.compact-catalog > .section-heading { margin-top:28px; }
+.library-guidance { display:flex; justify-content:space-between; align-items:center; gap:24px; margin:18px 0 24px; }
+.library-guidance p { font-size:13px; color:var(--dim); margin:0; }
+.library-guidance button { white-space:nowrap; }
+.detail-copy .price-row { margin:20px 0 16px; }
+@media(max-width:760px) {
+ .header-inner { height:72px; display:flex; flex-wrap:nowrap; gap:15px; }
+ .wordmark { font-size:25px; }
+ .header nav { display:flex; height:100%; margin-left:auto; gap:18px; font-size:12px; }
+ .header nav .how-link { display:none; }
+ .detail-grid { display:flex; flex-direction:column; gap:25px; }
+ .detail-copy { order:0; width:100%; }
+ .detail-visual { order:1; width:110px; max-height:none; }
+ .detail-cover { aspect-ratio:3/4; }
+ .detail-visual .cover-caption, .detail-visual .image-label { display:none; }
+ .detail-copy h1 { font-size:38px; }
+ .detail-copy .price-row strong { font-size:27px; }
+ .detail-copy > hr { margin:20px 0; }
+ .detail-copy .style-options { grid-template-columns:1fr 1fr; }
+ .detail-copy .style-options > button { padding:12px 10px; gap:8px; }
+ .library-guidance { align-items:start; flex-direction:column; gap:12px; }
+ .library .section-heading h1 { font-size:34px; }
+}
+@media(max-width:360px) { .wordmark { font-size:23px; } }
+
+.shell { width:min(1120px,calc(100% - 80px)); }
+.mobile-recipe { color:var(--dim); font-size:13px; margin-top:14px; }
+@media(max-width:900px){.shell{width:calc(100% - 48px)}}
+@media(max-width:760px){.shell{width:calc(100% - 36px)}.footer>div{flex-wrap:wrap;gap:14px}.flow-grid h1{font-family:inherit;font-size:32px;letter-spacing:-1px}.flow-grid .lead{font-size:14px}}
+@media(max-width:360px){.shell{width:calc(100% - 32px)}}

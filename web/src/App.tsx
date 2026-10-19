@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ArrowDown,
   ArrowLeft,
   ArrowRight,
   Check,
@@ -20,8 +19,6 @@ import {
   Search,
   ShieldCheck,
   SlidersHorizontal,
-  Sparkles,
-  Sun,
   Trash2,
   UserRound,
   X,
@@ -34,9 +31,9 @@ import {
   packById,
   cover,
   sceneImage,
-  category,
   location,
 } from "./lib/catalog";
+import { storefrontEntry, withoutStorefrontEntry } from "./lib/storefront-entry";
 import { InvalidStoredStateError } from "./lib/stored-state";
 import { emptyState, validateDraft } from "./lib/domain";
 import { prepareReference, downloadPhotos } from "./lib/media";
@@ -50,8 +47,10 @@ import type {
 } from "./lib/types";
 import { Modal } from "./components/Modal";
 
+const homeHref = liveMode ? "/#shoots" : "#/";
 function go(path: string) {
-  window.location.hash = path;
+  if (liveMode && path === "/") window.location.assign(homeHref);
+  else window.location.hash = path;
 }
 const pathNow = () => window.location.hash.slice(1) || "/";
 const money = "$3.99";
@@ -69,6 +68,8 @@ export default function App() {
   const [confirmReset, setConfirmReset] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [path, setPath] = useState(pathNow);
+  const redirectHome = liveMode && path === "/" && !new URLSearchParams(window.location.search).has("checkout");
+  const entry = useRef(storefrontEntry(window.location.search, path));
   const [dialog, setDialog] = useState<Dialog>(null);
   const [toast, setToast] = useState("");
   const [now, setNow] = useState(Date.now());
@@ -96,16 +97,28 @@ export default function App() {
   );
   const closeDialog = useCallback(() => setDialog(null), []);
   useEffect(() => {
+    if (redirectHome) window.location.replace("/");
+  }, [redirectHome]);
+  useEffect(() => {
     if (!loaded || !liveMode) return;
     const event = studioRouteEvent(path, state);
     if (event) service.track?.(event.name, event.params);
     // A screen visit is measured once, not on each polling refresh.
   }, [loaded, path]);
   useEffect(() => {
+    if (redirectHome) return;
     let alive = true;
+    // One validated handoff, shared by refreshes. startDraft preserves selfies and paid checkpoints.
+    const initialize = (async () => {
+      if (!entry.current) return;
+      const chosen = entry.current;
+      await service.startDraft(chosen.packId, chosen.styling, chosen.styleId);
+      await service.setStyling(chosen.styling);
+      service.track?.("pack_opened", { ...chosen, source: "public_catalog" });
+      window.history.replaceState(null, "", `${window.location.pathname}${withoutStorefrontEntry(window.location.search)}${window.location.hash}`);
+    })();
     const refresh = () => {
-      void service
-        .read()
+      void initialize.then(() => service.read())
         .then((s) => {
           if (alive) {
             setState(s);
@@ -132,12 +145,12 @@ export default function App() {
       alive = false;
       stop();
     };
-  }, []);
+  }, [redirectHome]);
   useEffect(() => {
     const change = () => {
       setPath(pathNow());
       window.scrollTo({ top: 0 });
-      main.current?.focus();
+      main.current?.focus({ preventScroll: true });
     };
     window.addEventListener("hashchange", change);
     return () => window.removeEventListener("hashchange", change);
@@ -161,11 +174,11 @@ export default function App() {
   if (fatal)
     return (
       <main className="fatal">
-        <Sun />
+        <Info />
         <h1>
           {recoverable
-            ? "Your saved studio needs attention."
-            : liveMode ? "Your studio needs to reconnect." : "Your studio needs browser storage."}
+            ? "Your saved photos need attention."
+            : liveMode ? "Your photos need to reconnect." : "Your studio needs browser storage."}
         </h1>
         <p>{fatal}</p>
         <button className="button" onClick={() => window.location.reload()}>
@@ -222,7 +235,7 @@ export default function App() {
     return (
       <main className="fatal">
         <LoaderCircle className="spin" />
-        <p>Opening your studio…</p>
+        <p>Opening your photoshoot…</p>
       </main>
     );
   const draft = state.draft;
@@ -260,43 +273,14 @@ export default function App() {
       </div>}
       <header className="header">
         <div className="shell header-inner">
-          <a className="wordmark" href="#/" aria-label="BeAnywhere home">
-            <span className="brand-icon">
-              <Sun size={24} />
-            </span>
-            BeAnywhere<span className="wordmark-period">.</span>
-          </a>
+          <a className="wordmark" href={liveMode ? "/" : "#/"} aria-label="BeAnywhere home">BeAnywhere</a>
           <nav aria-label="Main navigation">
-            <a
-              className={
-                path === "/" || path.startsWith("/shoot/") ? "active" : ""
-              }
-              href="#/"
-            >
-              Explore shoots
-            </a>
-            <a
-              className={
-                path === "/library" || path.startsWith("/gallery/")
-                  ? "active"
-                  : ""
-              }
-              href="#/library"
-            >
-              My photos
-              {state.shoots.length > 0 && (
-                <span className="count">{state.shoots.length}</span>
-              )}
+            <a className="how-link" href={liveMode ? "/#how-it-works" : "#destinations"}
+              onClick={liveMode ? undefined : e => { e.preventDefault(); setDialog("help"); }}>How it works</a>
+            <a className={path === "/library" || path.startsWith("/gallery/") ? "active" : ""} href="#/library">
+              My photos{state.shoots.length > 0 && <span className="count">{state.shoots.length}</span>}
             </a>
           </nav>
-          <button
-            className="account-button"
-            aria-label="Open account and privacy"
-            onClick={() => setDialog("account")}
-          >
-            <UserRound size={18} />
-            <span>My studio</span>
-          </button>
         </div>
       </header>
       {offline && (
@@ -381,7 +365,7 @@ export default function App() {
               body="Find your completed shoots in My photos, or start a new one."
             />
           ))}
-        {path === "/library" && <Library shoots={state.shoots} now={now} />}
+        {path === "/library" && <Library shoots={state.shoots} now={now} onSettings={() => setDialog("account")} />}
         {currentShoot && (
           <Gallery
             key={currentShoot.id}
@@ -401,11 +385,12 @@ export default function App() {
           )}
       </main>
       <footer className="footer shell">
-        <a className="footer-brand" href="#/">
-          BeAnywhere.
+        <a className="footer-brand" href={homeHref}>
+          BeAnywhere
         </a>
-        <span>A little imagination. A whole new setting.</span>
+        <span>12 photos. One payment.</span>
         <div>
+          {path !== "/library" && <button onClick={() => setDialog("account")}>Photo settings</button>}
           <button onClick={() => setDialog("help")}>How it works</button>
           <button onClick={() => setDialog("privacy")}>Privacy</button>
           <button onClick={() => setDialog("terms")}>Terms</button>
@@ -435,7 +420,7 @@ export default function App() {
                 ? "Your photos, your choice"
                 : dialog === "terms"
                   ? liveMode ? "Using BeAnywhere" : "About using this draft"
-                  : "Your studio"
+                  : "Photo settings"
           }
           onClose={closeDialog}
         >
@@ -467,7 +452,7 @@ export default function App() {
               </div>
               <p>
                 Your draft and sample shoots are saved only in this browser. You
-                can clear everything from My studio.
+                can clear everything from Photo settings.
               </p>
               <button className="button" onClick={closeDialog}>
                 Let’s explore <ArrowRight size={18} />
@@ -560,232 +545,18 @@ function StylingToggle({
     </div>
   );
 }
-function Explore({
-  styling,
-  setStyling,
-  draft,
-}: {
-  styling: Styling;
-  setStyling: (v: Styling) => void;
-  draft: Draft | null;
-}) {
-  const [filter, setFilter] = useState("All shoots");
-  const [search, setSearch] = useState("");
-  const shown = packs.filter(
-    (p) =>
-      (filter === "All shoots" || category(p.packId) === filter) &&
-      `${p.title} ${p.tagline}`.toLowerCase().includes(search.toLowerCase()),
-  );
-  return (
-    <>
-      <section className="hero">
-        <div className="hero-copy">
-          <p className="eyebrow">
-            <span />
-            YOUR PERSONAL PHOTO STUDIO
-          </p>
-          <h1>
-            You, somewhere
-            <br />
-            <em>extraordinary.</em>
-          </h1>
-          <p className="hero-description">
-            A café in Paris. Golden light in Santorini.
-            <br />
-            Turn your selfies into a photoshoot worth keeping.
-          </p>
-          <a
-            className="button"
-            href="#destinations"
-            onClick={(e) => {
-              e.preventDefault();
-              document
-                .getElementById("destinations")
-                ?.scrollIntoView({ behavior: "smooth" });
-            }}
-          >
-            Find your next setting <ArrowDown size={17} />
-          </a>
-          <div className="hero-facts">
-            <span>12 photos</span>
-            <i />
-            <span>3 reshoots</span>
-            <i />
-            <span>No subscription</span>
-          </div>
-        </div>
-        <div
-          className="hero-art"
-          aria-label="Illustrative BeAnywhere shoot previews"
-        >
-          <div className="orbit-label">A CHANGE OF SCENERY</div>
-          <figure className="print print-back">
-            <img
-              src={cover("santorini", styling)}
-              alt="Santorini marketing preview"
-            />
-            <figcaption>
-              <span>Santorini</span>36.46° N
-            </figcaption>
-          </figure>
-          <figure className="print print-front">
-            <img src={cover("paris", styling)} alt="Paris marketing preview" />
-            <figcaption>
-              <span>Paris</span>48.86° N
-            </figcaption>
-          </figure>
-          <span className="hero-stamp">
-            <Sun size={21} />A little
-            <br />
-            possibility.
-          </span>
-        </div>
-      </section>
-      {draft && (
-        <div className="resume">
-          <div>
-            <span className="status-dot" />
-            <strong>
-              Your {packById(draft.packId)?.title} shoot is waiting.
-            </strong>
-            <span>{draft.references.length} of 4–6 selfies selected</span>
-          </div>
-          <a href="#/upload">
-            Continue your draft <ArrowRight size={16} />
-          </a>
-        </div>
-      )}
-      <section className="catalog" id="destinations">
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">THE COLLECTION</p>
-            <h2>Where will you be?</h2>
-          </div>
-          <StylingToggle value={styling} onChange={setStyling} />
-        </div>
-        <div className="catalog-toolbar">
-          <div className="filters" role="group" aria-label="Filter shoots">
-            {["All shoots", "Escapes", "Everyday & evenings"].map((f) => (
-              <button
-                className={filter === f ? "selected" : ""}
-                aria-pressed={filter === f}
-                key={f}
-                onClick={() => setFilter(f)}
-              >
-                {f}
-                {f === "All shoots" && <span>06</span>}
-              </button>
-            ))}
-          </div>
-          <label className="search">
-            <Search size={16} />
-            <input
-              aria-label="Search shoots"
-              placeholder="Find a setting"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            {search && (
-              <button aria-label="Clear search" onClick={() => setSearch("")}>
-                <X size={14} />
-              </button>
-            )}
-          </label>
-        </div>
-        <div className="pack-grid">
-          {shown.map((pack, i) => (
-            <a
-              className="pack-card"
-              href={`#/shoot/${pack.packId}`}
-              key={pack.packId}
-            >
-              <div className="pack-image">
-                <img
-                  src={cover(pack.packId, styling)}
-                  alt={`${pack.title} ${styling === "w" ? "women’s" : "men’s"} styling preview`}
-                  loading={i > 2 ? "lazy" : "eager"}
-                />
-                <span className="image-label">
-                  <MapPin size={11} />
-                  {location(pack.packId)}
-                </span>
-                <span className="pack-arrow">
-                  <ArrowRight size={21} />
-                </span>
-              </div>
-              <div className="pack-card-heading">
-                <h3>{pack.title}</h3>
-                <span>{money}</span>
-              </div>
-              <p>{pack.tagline}</p>
-              <div className="pack-meta">
-                6 scenes <span>·</span> 12 photos <span>·</span> 2 looks
-              </div>
-            </a>
-          ))}
-        </div>
-        {!shown.length && (
-          <div className="no-results">
-            <Search />
-            <h3>No settings found.</h3>
-            <p>Try another search, or explore all six shoots.</p>
-            <button
-              className="button secondary"
-              onClick={() => {
-                setSearch("");
-                setFilter("All shoots");
-              }}
-            >
-              Show all shoots
-            </button>
-          </div>
-        )}
-        <p className="preview-caption">
-          {liveMode ? "Collection imagery illustrates the setting and styling. Your AI results will vary." : "Collection imagery is illustrative. Your photos will be unique when live generation is connected."}
-        </p>
-      </section>
-      <section className="how">
-        <div>
-          <p className="eyebrow">A LITTLE SELFIE MAGIC</p>
-          <h2>
-            From your camera roll
-            <br />
-            to your <em>next favorite photo.</em>
-          </h2>
-        </div>
-        <div className="how-steps">
-          {[
-            [
-              "01",
-              "Make it your scene.",
-              "Choose a destination, then find a look that feels like you.",
-            ],
-            [
-              "02",
-              "Bring yourself.",
-              "Add 4–6 clear selfies of the same person, from different angles.",
-            ],
-            [
-              "03",
-              "Keep your favorites.",
-              "Explore your photos, try a reshoot, and save the ones you love.",
-            ],
-          ].map(([n, title, desc]) => (
-            <div key={n}>
-              <span>{n}</span>
-              <h3>{title}</h3>
-              <p>{desc}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-      <div className="reassurance">
-        <ShieldCheck size={20} />
-        <span>Your face. Your choice. Your photos stay private.</span>
-        <span>One pack, one payment. Always.</span>
-      </div>
-    </>
-  );
+function Explore({ styling, setStyling, draft }: { styling: Styling; setStyling: (s: Styling) => void; draft: Draft | null }) {
+  return <section className="catalog compact-catalog" id="destinations">
+    <h1>Your selfies. A new setting.</h1>
+    <p className="lead">Choose a photoshoot, add your selfies, and get your photos by email.</p>
+    <p className="muted small">$3.99 USD · 12 photos · 3 reshoots · No subscription</p>
+    {draft && <p className="resume"><a href="#/upload">Continue your {packById(draft.packId)?.title} draft →</a></p>}
+    <div className="section-heading"><h2>Choose your photoshoot</h2><StylingToggle value={styling} onChange={setStyling} /></div>
+    <div className="pack-grid">{packs.map(pack => <a className="pack-card" href={`#/shoot/${pack.packId}`} key={pack.packId}>
+      <div className="pack-image"><img src={cover(pack.packId, styling)} alt={`${pack.title} styling preview`} /></div>
+      <div className="pack-card-heading"><h3>{pack.title}</h3><span>{money}</span></div><p>{pack.tagline}</p>
+    </a>)}</div><p className="preview-caption">AI-generated previews show the setting and styling. Your results will vary.</p>
+  </section>;
 }
 
 function PackDetail({
@@ -818,7 +589,7 @@ function PackDetail({
   };
   return (
     <div className="detail">
-      <a className="back-link" href="#/">
+      <a className="back-link" href={homeHref}>
         <ArrowLeft size={15} />
         All photoshoots
       </a>
@@ -839,9 +610,16 @@ function PackDetail({
           <p className="eyebrow">YOUR NEXT PHOTOSHOOT</p>
           <h1>
             {pack.title}
-            <span>.</span>
           </h1>
           <p className="lead">{pack.tagline}</p>
+          <div className="price-row">
+            <strong>{money}</strong>
+            <span>
+              USD per pack
+              <br />
+              One time. All yours.
+            </span>
+          </div>
           <div className="detail-facts">
             <span>
               <Images size={17} />
@@ -851,7 +629,7 @@ function PackDetail({
               <RotateCcw size={16} />3 reshoots
             </span>
             <span>
-              <Sun size={17} />6 scenes
+              <Images size={17} />6 scenes
             </span>
           </div>
           <hr />
@@ -875,14 +653,6 @@ function PackDetail({
               </button>
             ))}
           </div>
-          <div className="price-row">
-            <strong>{money}</strong>
-            <span>
-              USD per pack
-              <br />
-              One time. All yours.
-            </span>
-          </div>
           <button
             className="button full"
             disabled={busy}
@@ -901,7 +671,7 @@ function PackDetail({
               <LoaderCircle className="spin" size={17} />
             ) : (
               <>
-                Create my {pack.title} shoot <ArrowRight size={18} />
+                Add your selfies <ArrowRight size={18} />
               </>
             )}
           </button>
@@ -1002,7 +772,7 @@ function ShootSummary({ draft }: { draft: Draft }) {
           <span>Pack price</span>
           <strong>{money} USD</strong>
         </div>
-        <a href={`#/shoot/${pack.packId}`}>
+        <a href={liveMode ? `/shoots/${draft.packId}/?styling=${draft.styling}&look=${draft.styleId}` : `#/shoot/${pack.packId}`}>
           Edit your shoot <SlidersHorizontal size={13} />
         </a>
       </div>
@@ -1106,18 +876,16 @@ function Upload({
   return (
     <div className="flow-grid">
       <section>
-        <a className="back-link" href={`#/shoot/${draft.packId}`}>
+        <a className="back-link" href={liveMode ? `/shoots/${draft.packId}/?styling=${draft.styling}&look=${draft.styleId}` : `#/shoot/${draft.packId}`}>
           <ArrowLeft size={15} />
           Back to your shoot
         </a>
-        <p className="eyebrow">A FEW PHOTOS. ALL YOU.</p>
-        <h1>
-          Bring your best <em>selfies.</em>
-        </h1>
+        <h1>Add your selfies</h1>
+        <p className="mobile-recipe">{pack.title} · {draft.styling === "w" ? "Women’s" : "Men’s"} styling · {pack.styleDirections[draft.styling].find(s => s.id === draft.styleId)?.label}</p>
         <p className="lead">
           Add 4–6 clear photos of the same person.
           <br />
-          Different angles help tell the whole story.
+          Use different angles and good lighting.
         </p>
         <div className="upload-tips">
           <span>
@@ -1125,7 +893,7 @@ function Upload({
             One adult in every photo
           </span>
           <span>
-            <Sun size={16} />
+            <CheckCircle2 size={16} />
             Good, natural light
           </span>
           <span>
@@ -1157,7 +925,7 @@ function Upload({
         >
           <ImagePlus size={32} strokeWidth={1.2} />
           <h3>
-            {busy ? "Preparing your photos…" : "Your next chapter starts here."}
+            {busy ? "Preparing your photos…" : "Choose 4–6 photos"}
           </h3>
           <p>Drag photos here, or choose from your camera roll.</p>
           <button
@@ -1342,11 +1110,8 @@ function Checkout({
           <ArrowLeft size={15} />
           Back to your selfies
         </a>
-        <p className="eyebrow">ONE LAST LOOK</p>
-        <h1>
-          Ready for a <em>new setting?</em>
-        </h1>
-        <p className="lead">Your photoshoot is all set. Let’s make it yours.</p>
+        <h1>Review your photoshoot</h1>
+        <p className="lead">{packById(draft.packId)?.title} · {draft.styling === "w" ? "Women’s" : "Men’s"} styling · {packById(draft.packId)?.styleDirections[draft.styling].find(s => s.id === draft.styleId)?.label}</p>
         <div className="checkout-refs">
           {draft.references.map((r, i) => (
             <img
@@ -1419,7 +1184,7 @@ function Checkout({
               </>
             ) : (
               <>
-                {liveMode ? `Continue to pay ${money}` : "Create my demo shoot"} <Sparkles size={17} />
+                {liveMode ? `Continue to pay ${money}` : "Create my demo shoot"} <ArrowRight size={17} />
               </>
             )}
           </button>
@@ -1441,25 +1206,22 @@ function Checkout({
   );
 }
 
-function Library({ shoots, now }: { shoots: Shoot[]; now: number }) {
+function Library({ shoots, now, onSettings }: { shoots: Shoot[]; now: number; onSettings: () => void }) {
   const [filter, setFilter] = useState("All shoots");
   const filtered = shoots.filter(
     (s) => filter === "All shoots" || s.photos.some((p) => p.favorite),
   );
   return (
     <section className="library">
-      <p className="eyebrow">YOUR OWN LITTLE COLLECTION</p>
+
       <div className="section-heading">
-        <h1>
-          Good moments.
-          <br />
-          <em>Worth keeping.</em>
-        </h1>
-        <a className="button secondary" href="#/">
+        <h1>My photos</h1>
+        <a className="button secondary" href={homeHref}>
           <Plus size={16} />
           New photoshoot
         </a>
       </div>
+      <div className="library-guidance"><p>{liveMode ? "Your shoots in this browser. Finished photos are also emailed to you as attachments." : "Your saved sample photoshoots in this browser."}</p><button className="text-button" onClick={onSettings}>Photo settings</button></div>
       <div className="library-toolbar">
         <div className="filters">
           {["All shoots", "With favorites"].map((f) => (
@@ -1529,7 +1291,7 @@ function Library({ shoots, now }: { shoots: Shoot[]; now: number }) {
           icon={<Images size={36} strokeWidth={1} />}
           title={
             filter === "All shoots"
-              ? "Your story starts here."
+              ? "Your photos will appear here."
               : "Make a few favorites."
           }
           body={
@@ -1675,7 +1437,7 @@ function Gallery({
       {done.length < 12 && (
         <div className="progress-panel">
           <div>
-            <Sun size={20} />
+            <Images size={20} />
             <span>Finding the light. Framing the moment.</span>
             <strong>{Math.round((done.length / 12) * 100)}%</strong>
           </div>
@@ -1805,7 +1567,7 @@ function Gallery({
                   </>
                 ) : (
                   <div className="photo-developing">
-                    <Sun size={29} className="slow-spin" />
+                    <LoaderCircle size={29} className="spin" />
                     <span>
                       {!shoot.sample && ["failed", "finished", "manual-review", "paused"].some(value => value === shoot.status || value === shoot.generationState) ? "Not ready" : photo.revision ? "Reshooting…" : "Developing…"}
                     </span>
@@ -1862,7 +1624,7 @@ function Gallery({
           <h3>Another setting. Another side of you.</h3>
           <p>Explore somewhere new whenever the mood strikes.</p>
         </div>
-        <a className="button secondary" href="#/">
+        <a className="button secondary" href={homeHref}>
           Find my next shoot <ArrowRight size={17} />
         </a>
       </div>
@@ -2094,10 +1856,10 @@ function Empty({
 }) {
   return (
     <div className="empty">
-      {icon || <Sun size={34} strokeWidth={1} />}
+      {icon || <Images size={34} strokeWidth={1} />}
       <h2>{title}</h2>
       <p>{body}</p>
-      <a className="button" href="#/">
+      <a className="button" href={homeHref}>
         Explore photoshoots <ArrowRight size={17} />
       </a>
     </div>

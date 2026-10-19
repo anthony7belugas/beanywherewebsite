@@ -3,7 +3,7 @@ import path from "node:path";
 
 async function uploadPage(page: import("@playwright/test").Page) {
   await page.goto("/#/shoot/paris");
-  await page.getByRole("button", { name: "Create my Paris shoot" }).click();
+  await page.getByRole("button", { name: "Add your selfies" }).click();
 }
 
 test("removing references wins against a photo still being prepared, including after reload", async ({
@@ -30,7 +30,7 @@ test("removing references wins against a photo still being prepared, including a
       page.evaluate(() => typeof Reflect.get(window, "releasePreparation")),
     )
     .toBe("function");
-  await page.getByRole("button", { name: "Open account and privacy" }).click();
+  await page.getByRole("button", { name: "Photo settings", exact: true }).click();
   await page
     .getByRole("button", { name: "Remove draft reference photos" })
     .click();
@@ -93,7 +93,7 @@ test("keyboard focus stays in a dialog and returns to its opener", async ({
   page,
 }) => {
   await page.goto("/");
-  const opener = page.getByRole("button", { name: "Open account and privacy" });
+  const opener = page.getByRole("button", { name: "Photo settings", exact: true });
   await opener.focus();
   await page.keyboard.press("Enter");
   const modal = page.getByRole("dialog");

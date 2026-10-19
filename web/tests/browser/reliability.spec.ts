@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 
 async function selected(page: import("@playwright/test").Page) {
   await page.goto("/#/shoot/paris");
-  await page.getByRole("button", { name: "Create my Paris shoot" }).click();
+  await page.getByRole("button", { name: "Add your selfies" }).click();
   await page.getByRole("button", { name: /Use demo photos/ }).click();
   await expect(page.getByText("4 / 6 photos selected")).toBeVisible();
 }

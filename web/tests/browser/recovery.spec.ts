@@ -73,7 +73,7 @@ test("damaged saved data has a non-destructive recovery screen and a confirmed r
   const broken = { ...emptyState(), draft: { packId: "removed-pack" } };
   await seed(page, broken, "/upload");
   await expect(
-    page.getByRole("heading", { name: "Your saved studio needs attention." }),
+    page.getByRole("heading", { name: "Your saved photos need attention." }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Reset local studio" }).click();
   await page.screenshot({
@@ -188,7 +188,7 @@ test("leaving a gallery cancels its pending download", async ({ page }) => {
   await expect
     .poll(() => page.evaluate(() => Reflect.get(window, "downloadStarted")))
     .toBe(true);
-  await page.getByRole("link", { name: "Explore shoots", exact: true }).click();
+  await page.getByRole("link", { name: "BeAnywhere home", exact: true }).click();
   await expect
     .poll(() => page.evaluate(() => Reflect.get(window, "downloadAborted")))
     .toBe(true);
