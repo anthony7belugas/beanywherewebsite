@@ -1,15 +1,12 @@
 # Web studio rollout
 
-Updated October 18, 2026. The backend is deployed to `bethere-3d7de` and the
+Updated October 19, 2026. The backend is deployed to `bethere-3d7de` and the
 compiled studio is published at `https://beanywhere.app/studio/` through the
-existing Cloudflare Pages project. **Public sales are not yet enabled.**
+existing Cloudflare Pages project. **Public sales are enabled.**
 
-`config/web` is temporarily in Stripe test mode and accepts checkout only for
-the explicitly allowlisted test browser. The homepage launch links are prepared
-locally but must not be published until the end-to-end test passes and the config
-returns to live mode. The user requested this audit before the sandbox checkout.
-No successful customer payment, photo generation or automatic email
-has yet been verified end-to-end.
+`config/web` uses the live one-time $3.99 price, with automatic delivery enabled.
+The deployed end-to-end flow passed with the owner's reference photos and a
+Stripe sandbox card before enabling public sales. No real card was charged.
 
 ## Connections
 
@@ -49,7 +46,7 @@ Never add Stripe secrets, webhook secrets or service-account private keys here.
 
 - 248 backend release checks, including both native production bundles.
 - 139 frontend tests, TypeScript and live production build.
-- 69 focused backend web tests after the latest audit: late checkout responses
+- 70 focused backend web tests after the latest audit: late checkout responses
   cannot overwrite a newer result; refund-first notifications preserve the
   reversed financial receipt without granting generation or queuing email.
 - Reopening a completed checkout uses a stable conversion event ID. Removing
@@ -57,8 +54,26 @@ Never add Stripe secrets, webhook secrets or service-account private keys here.
 - Actual deployed App Check, browser custom sign-in and private gallery query.
 - Website security headers and Firebase Storage CORS.
 - Private credential pattern scan of all 399 tracked site files: zero matches.
+- Actual sandbox Checkout payment, signed webhook, exactly one generation job,
+  all 12 photos completed, RevenueCat receipt sync, and Gmail delivery with all
+  12 photo attachments. The browser ZIP downloaded and passed archive integrity
+  validation. An included reshoot completed and reduced the credit count by one.
+- Actual sandbox refund was received through the signed webhook and immediately
+  revoked the shoot's output access. Existing downloaded/email copies remain
+  with the recipient. Refunds cannot grant more generation.
+- Web upload sessions allow 90 minutes for checkout; native sessions retain their
+  configured duration. Stripe SDK 23 uses `allowed_payment_method_types`.
+- Mobile homepage layout checked at 375px; Android links remain available.
 
-Next: sandbox checkout → signed webhook → one real job → photo delivery →
-RevenueCat receipt sync, retry/refund checks, live configuration, homepage links,
-and a final production browser smoke test. Do not represent local tests as proof
-that the entire deployed payment/delivery flow works.
+## Operational notes
+
+The live Stripe account and price were checked as active with charges/payouts
+enabled. A real-money purchase has not been performed. RevenueCat receives
+external Stripe receipts for reporting; the backend Stripe ledger controls
+generation. RevenueCat's later refund display follows its Stripe synchronization.
+Never switch a public site into sandbox mode for general visitors: disable
+checkout first, then restrict sandbox access to explicit test UIDs.
+
+To pause sales without affecting native apps, set only
+`config/web.checkoutEnabled` to false. Preserve existing paid orders and recovery
+workers. Stripe secrets stay in Secret Manager; no credential belongs in this repo.

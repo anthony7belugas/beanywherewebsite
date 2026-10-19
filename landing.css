@@ -106,7 +106,7 @@
   .brand img { width: 30px; height: 30px; border-radius: 7px; }
   .brand .wordmark { font-size: 21px; }
   .landing-header nav { font-size: 13px; }
-  .how-link { display: none; }
+  .how-link, .header-app-download { display: none; }
   .header-download span { margin-left: 4px; }
   .launch-hero { grid-template-columns: 1fr; gap: 32px; padding-block: 42px 40px; }
   .hero-copy { max-width: 520px; }
@@ -153,3 +153,6 @@
   .photo-print figcaption { font-size: 9px; }
   .photo-print figcaption span { font-size: 15px; }
 }
+
+.web-app-alternative { margin: 14px 0 0; font-size: 14px; line-height: 1.6; }
+.web-app-alternative a { text-decoration: underline; text-underline-offset: 3px; }
