@@ -1,9 +1,20 @@
 import { zipSync, strToU8 } from "fflate";
 import type { Photo, Reference } from "./types";
+async function photoStep<T>(promise: Promise<T>, milliseconds: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([promise, new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error("Photo preparation timed out.")), milliseconds);
+    })]);
+  } finally { if (timer) clearTimeout(timer); }
+}
 export async function prepareReference(file: File): Promise<Reference> {
-  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type))
+  const heic = ["image/heic", "image/heif"].includes(file.type.toLowerCase()) || /\.hei[cf]$/i.test(file.name);
+  const knownImage = ["image/jpeg", "image/png", "image/webp"].includes(file.type.toLowerCase())
+    || (!file.type && /\.(jpe?g|png|webp)$/i.test(file.name));
+  if (!knownImage && !heic)
     throw new Error(
-      `${file.name}: choose a JPG, PNG, or WebP. Export HEIC photos as JPG first.`,
+      `${file.name}: choose a JPG, PNG, WebP, or iPhone HEIC photo.`,
     );
   if (file.size > 20 * 1024 * 1024)
     throw new Error(`${file.name}: use a photo smaller than 20 MB.`);
@@ -13,16 +24,25 @@ export async function prepareReference(file: File): Promise<Reference> {
   )
     .map((x) => x.toString(16).padStart(2, "0"))
     .join("");
-  const url = URL.createObjectURL(file);
+  let url = URL.createObjectURL(file);
   try {
     const image = new Image();
     image.src = url;
     try {
-      await image.decode();
+      await photoStep(image.decode(), 20000);
     } catch {
-      throw new Error(
-        `${file.name}: this photo could not be opened. Export a fresh JPG and try again.`,
-      );
+      if (!heic) throw new Error(`${file.name}: this photo could not be opened. Try another photo.`);
+      // Safari opens HEIC directly; other browsers load the converter only when needed.
+      try {
+        const jpeg = await photoStep(import("heic-to/csp").then(({ heicTo }) =>
+          heicTo({ blob: file, type: "image/jpeg", quality: 0.92 })), 45000);
+        URL.revokeObjectURL(url);
+        url = URL.createObjectURL(jpeg);
+        image.src = url;
+        await photoStep(image.decode(), 20000);
+      } catch {
+        throw new Error(`${file.name}: this iPhone photo could not be prepared. Try another photo, or save a JPG copy.`);
+      }
     }
     if (Math.min(image.naturalWidth, image.naturalHeight) < 256)
       throw new Error(

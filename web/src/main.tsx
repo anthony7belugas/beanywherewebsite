@@ -2,6 +2,8 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./styles.css";
+import { currentAttribution } from "../storefront/acquisition.js";
+currentAttribution();
 
 class Boundary extends React.Component<
   { children: React.ReactNode },

@@ -1,3 +1,4 @@
+import type { Acquisition } from "../storefront/acquisition.js";
 /**
  * SDK operations bound to one server-admitted browser session. Native identities
  * cannot be used by this adapter, even when signed into the same Firebase project.
@@ -81,7 +82,7 @@ export type WebCheckout = {
 };
 export interface WebPayments {
   /** The server owns checkout idempotency, prices, and the payment verdict. */
-  createCheckout(orderId: string, email: string): Promise<WebCheckout>;
+  createCheckout(orderId: string, email: string, attribution?: Acquisition): Promise<WebCheckout>;
   getCheckout(orderId: string): Promise<WebCheckout>;
 }
 export type AdapterDependencies = {
@@ -403,7 +404,7 @@ export function createFirebaseAdapter(deps: AdapterDependencies) {
     }) {
       return call<{ orderId: string }>("createOrder", input);
     },
-    async beginWebCheckout(orderId: string, email: string) {
+    async beginWebCheckout(orderId: string, email: string, attribution?: Acquisition) {
       if (typeof email !== "string" || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
         throw new Error("Enter a valid delivery email address.");
       if (!deps.checkoutOrigins?.length)
@@ -413,6 +414,7 @@ export function createFirebaseAdapter(deps: AdapterDependencies) {
       const result = await payments.createCheckout(
         documentId(orderId),
         email,
+        attribution,
       );
       assertSession();
       return validateCheckout(result, orderId);

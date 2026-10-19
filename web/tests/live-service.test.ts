@@ -1,5 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { openDB } from "idb";
+import { directAttribution } from "../storefront/acquisition.js";
 import { LiveStudioService, projectWebJob } from "../src/services/live";
 import { LocalStudioService } from "../src/services/local";
 import type { Draft } from "../src/lib/types";
@@ -59,7 +60,7 @@ it("uploads the reviewed selfies, freezes an order, and returns only the server 
   expect(api.uploadReferences.mock.calls[0][0][0].type).toBe("image/jpeg");
   expect(api.createOrder).toHaveBeenCalledWith({ packId: "paris", productId: "pack.paris", styleId: "casual",
     styling: "w", wearsGlasses: false, uploadSessionId: "upload_1" });
-  expect(api.beginWebCheckout).toHaveBeenCalledExactlyOnceWith("order_1", "buyer@example.com");
+  expect(api.beginWebCheckout).toHaveBeenCalledExactlyOnceWith("order_1", "buyer@example.com", directAttribution());
   expect((await local.read()).draft).not.toBeNull();
 });
 
@@ -69,7 +70,7 @@ it("a lost checkout response retries the same saved order without uploading or c
   await service.checkout(draft, "buyer@example.com");
   expect(api.uploadReferences).toHaveBeenCalledTimes(1);
   expect(api.createOrder).toHaveBeenCalledTimes(1);
-  expect(api.beginWebCheckout.mock.calls).toEqual([["order_1", "buyer@example.com"], ["order_1", "buyer@example.com"]]);
+  expect(api.beginWebCheckout.mock.calls).toEqual([["order_1", "buyer@example.com", directAttribution()], ["order_1", "buyer@example.com", directAttribution()]]);
 });
 
 it("a lost upload response keeps the same persisted upload attempt", async () => {
@@ -147,7 +148,7 @@ it("only verified expiration releases an old checkout and a delayed response pre
   await service.payment("order_1");
   await service.checkout(draft, "buyer@example.com");
   expect(api.uploadReferences).toHaveBeenCalledTimes(2);
-  expect(api.beginWebCheckout.mock.calls.at(-1)).toEqual(["order_2", "buyer@example.com"]);
+  expect(api.beginWebCheckout.mock.calls.at(-1)).toEqual(["order_2", "buyer@example.com", directAttribution()]);
 });
 
 it("resetting draft storage does not discard the payment recovery record", async () => {
@@ -287,4 +288,19 @@ it("reads all recovery pages and deduplicates galleries already owned by this br
   api.recoverGalleries = vi.fn().mockResolvedValue({ email: "buyer@example.com", jobs: [job()], nextCursor: "page2" });
   await service.recoverGalleries("buyer@example.com");
   expect((await service.read()).shoots.map(s => s.id).sort()).toEqual(["job_1", "second"]);
+});
+
+
+it("reuses the attribution frozen with a saved checkout after a reload", async () => {
+  api.beginWebCheckout.mockRejectedValueOnce(new Error("lost reply"));
+  await expect(service.checkout(draft, "buyer@example.com")).rejects.toThrow("lost reply");
+  const db = await openDB(`${namespace}-operations`, 1);
+  const key = (await db.getAllKeys("attempts"))[0];
+  const saved = await db.get("attempts", key);
+  const attribution = { source: "instagram", medium: "social", campaign: "launch", content: "reel_03", code: "ig03" };
+  await db.put("attempts", { ...saved, attribution }, key);
+  const reloaded = new LiveStudioService(async () => api as API, namespace);
+  await reloaded.checkout(draft, "buyer@example.com");
+  expect(api.beginWebCheckout.mock.calls.at(-1)).toEqual(["order_1", "buyer@example.com", attribution]);
+  expect(api.uploadReferences).toHaveBeenCalledTimes(1);
 });

@@ -810,6 +810,7 @@ function Upload({
   const pack = packById(draft.packId)!;
   const [busy, setBusy] = useState(false);
   const [drag, setDrag] = useState(false);
+  const [preparingPhoto, setPreparingPhoto] = useState(0);
   const input = useRef<HTMLInputElement>(null);
   const preparing = useRef(false);
   const preparation = useRef(0);
@@ -827,7 +828,8 @@ function Upload({
     const refs = [...draft.references];
     const errors: string[] = [];
     try {
-      for (const file of files) {
+      for (const [index, file] of files.entries()) {
+        setPreparingPhoto(index + 1);
         if (refs.length >= 6) {
           errors.push("You can use up to six photos.");
           break;
@@ -923,7 +925,7 @@ function Upload({
         <input
           className="visually-hidden"
           type="file"
-          accept="image/jpeg,image/png,image/webp"
+          accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif"
           multiple
           ref={input}
           aria-label="Choose reference photos"
@@ -944,7 +946,7 @@ function Upload({
         >
           <ImagePlus size={32} strokeWidth={1.2} />
           <h3>
-            {busy ? "Preparing your photos…" : "Choose 4–6 photos"}
+            {busy ? `Preparing photo ${preparingPhoto}…` : "Choose 4–6 photos"}
           </h3>
           <p>Drag photos here, or choose from your camera roll.</p>
           <button
@@ -959,7 +961,7 @@ function Upload({
             )}
             Choose photos
           </button>
-          <small>JPG, PNG or WebP · Up to 20 MB each</small>
+          <small>JPG, PNG, WebP or HEIC · Up to 20 MB each</small>
         </div>
         <div className="upload-count">
           <strong>{draft.references.length} / 6 photos selected</strong>

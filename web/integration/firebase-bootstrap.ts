@@ -1,3 +1,4 @@
+import type { Acquisition } from "../storefront/acquisition.js";
 import { getApps, initializeApp } from "firebase/app";
 import { getAuth, getIdTokenResult, indexedDBLocalPersistence, setPersistence,
   signInWithCustomToken } from "firebase/auth";
@@ -60,7 +61,7 @@ async function connect(config: StudioFirebaseConfig) {
   if (!admittedWebClaims(user.uid, token.claims, session)) {
     throw new Error("The studio could not verify your sign-in.");
   }
-  const create = httpsCallable<{ orderId: string; email: string }, WebCheckout>(
+  const create = httpsCallable<{ orderId: string; email: string; attribution?: Acquisition }, WebCheckout>(
     functions, "createWebCheckout", { timeout: 95000 },
   );
   const status = httpsCallable<{ orderId: string }, WebCheckout>(
@@ -71,7 +72,7 @@ async function connect(config: StudioFirebaseConfig) {
     session: { uid: session.uid, webAppId: session.webAppId, capabilityVersion: 1 },
     checkoutOrigins: ["https://checkout.stripe.com"],
     payments: {
-      createCheckout: async (orderId, email) => (await create({ orderId, email })).data,
+      createCheckout: async (orderId, email, attribution) => (await create({ orderId, email, ...(attribution ? { attribution } : {}) })).data,
       getCheckout: async orderId => (await status({ orderId })).data,
     },
   });

@@ -396,7 +396,7 @@ it.each([
 it("accepts the approved HTTPS checkout and passes the email to the server", async () => {
   m.createCheckout.mockResolvedValue(checkout());
   expect(await adapter().beginWebCheckout("order_1", "customer@example.com")).toEqual(checkout());
-  expect(m.createCheckout).toHaveBeenCalledWith("order_1", "customer@example.com");
+  expect(m.createCheckout).toHaveBeenCalledWith("order_1", "customer@example.com", undefined);
 });
 it.each(["creating", "open", "paid", "fulfilled", "expired", "refunded", "needs-support"])(
   "reconciles %s by the frozen order ID, without assuming a redirect proves payment", async state => {

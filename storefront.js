@@ -1,5 +1,7 @@
+import { currentAttribution, attributedLink } from './acquisition.js';
 /* The public catalog works before browser sign-in. Only fixed catalog choices enter the studio. */
 (() => {
+  currentAttribution();
   const query = new URLSearchParams(location.search);
   let saved;
   try { saved = localStorage.getItem('beanywhere-public-styling'); } catch { /* Browsing works without storage. */ }
@@ -19,11 +21,16 @@
       image.src = `/studio/assets/covers/${image.dataset.cover}-${styling}.webp`;
       image.alt = image.alt.replace(/women’s|men’s/, styling === 'w' ? 'women’s' : 'men’s');
     });
-    document.querySelectorAll('[data-shoot-link]').forEach(link => { link.href = `/shoots/${link.dataset.shootLink}/?styling=${styling}`; });
+    document.querySelectorAll('[data-shoot-link]').forEach(link => { link.href = attributedLink(`/shoots/${link.dataset.shootLink}/?styling=${styling}`); });
     if (pack && look) {
       document.querySelectorAll('[data-scene]').forEach(image => { image.src = `/studio/assets/scenes/${pack}/${styling}/${look}/${image.dataset.scene}.webp`; });
-      document.querySelectorAll('[data-start]').forEach(link => { link.href = `/studio/?start=${pack}&styling=${styling}&look=${look}#/upload`; });
+      document.querySelectorAll('[data-start]').forEach(link => { link.href = attributedLink(`/studio/?start=${pack}&styling=${styling}&look=${look}#/upload`); });
     }
+    // Keep source labels through back/home/library navigation when storage is unavailable.
+    document.querySelectorAll('a[href]').forEach(link => {
+      const href = link.getAttribute('href');
+      if (/^\/(?:$|[?#]|studio(?:\/|[?#]|$)|shoots\/)/.test(href || '')) link.href = attributedLink(href);
+    });
   }
   document.querySelectorAll('[data-styling]').forEach(button => button.addEventListener('click', () => {
     styling = button.dataset.styling;

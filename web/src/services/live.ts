@@ -1,4 +1,5 @@
 import { openDB } from "idb";
+import { currentAttribution, type Acquisition } from "../../storefront/acquisition.js";
 import { LocalStudioService } from "./local";
 import { packById } from "../lib/catalog";
 import { validateDraft } from "../lib/domain";
@@ -8,7 +9,7 @@ import type { createFirebaseAdapter, NativeJobProjection, ReshootOperation, WebC
 type API = ReturnType<typeof createFirebaseAdapter>;
 type Attempt = {
   schemaVersion: 1; uid: string; key: string; review: CheckoutReview; email: string;
-  draft: Draft; uploadAttempt: string; uploadSessionId?: string; orderId?: string;
+  attribution?: Acquisition; draft: Draft; uploadAttempt: string; uploadSessionId?: string; orderId?: string;
 };
 const reviewKey = (review: CheckoutReview) =>
   `${review.checkoutKey}:${review.referenceVersion}:${review.wearsGlasses ? 1 : 0}`;
@@ -200,7 +201,7 @@ export class LiveStudioService implements StudioService {
     let attempt = await tx.store.get(key) as Attempt | undefined;
     if (!attempt) {
       attempt = { schemaVersion: 1, uid: api.session.uid, key, review, email,
-        draft: structuredClone(draft), uploadAttempt: crypto.randomUUID() };
+        attribution: currentAttribution(), draft: structuredClone(draft), uploadAttempt: crypto.randomUUID() };
       await tx.store.add(attempt, key);
     }
     await tx.done;
@@ -234,7 +235,7 @@ export class LiveStudioService implements StudioService {
       attempt = await this.checkpoint(attempt, { orderId: order.orderId });
     }
     await this.current(review, signal);
-    const checkout = await api.beginWebCheckout(attempt.orderId!, attempt.email);
+    const checkout = await api.beginWebCheckout(attempt.orderId!, attempt.email, attempt.attribution);
     await this.current(review, signal);
     if (checkout.amountMinor !== 399 || checkout.currency !== "usd") {
       throw new Error("The price has changed. Contact support before continuing.");
