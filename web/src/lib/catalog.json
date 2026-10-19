@@ -1,0 +1,362 @@
+[
+  {
+    "packId": "santorini",
+    "title": "Santorini",
+    "tagline": "White walls, blue domes, golden light over the caldera.",
+    "productId": "photo.pack.standard",
+    "sort": 1,
+    "stripVersion": 1,
+    "scenes": [
+      {
+        "sceneId": "terrace",
+        "label": "Caldera terrace"
+      },
+      {
+        "sceneId": "blue_dome",
+        "label": "Blue domes"
+      },
+      {
+        "sceneId": "lane",
+        "label": "Marble lane"
+      },
+      {
+        "sceneId": "cafe",
+        "label": "Cliffside café"
+      },
+      {
+        "sceneId": "golden_portrait",
+        "label": "Golden hour"
+      },
+      {
+        "sceneId": "sunset_closer",
+        "label": "Sunset wall"
+      }
+    ],
+    "styleDirections": {
+      "w": [
+        {
+          "id": "resort",
+          "label": "Resort",
+          "blurb": "Flowy & elegant"
+        },
+        {
+          "id": "casual",
+          "label": "Casual",
+          "blurb": "Easy & relaxed"
+        }
+      ],
+      "m": [
+        {
+          "id": "classic",
+          "label": "Classic",
+          "blurb": "Clean Mediterranean"
+        },
+        {
+          "id": "casual",
+          "label": "Casual",
+          "blurb": "Off-duty easy"
+        }
+      ]
+    }
+  },
+  {
+    "packId": "paris",
+    "title": "Paris",
+    "tagline": "Café mornings, Haussmann balconies, the Seine at gold.",
+    "productId": "photo.pack.standard",
+    "sort": 2,
+    "stripVersion": 1,
+    "scenes": [
+      {
+        "sceneId": "balcony",
+        "label": "Haussmann balcony"
+      },
+      {
+        "sceneId": "eiffel",
+        "label": "Eiffel view"
+      },
+      {
+        "sceneId": "marais",
+        "label": "Le Marais stroll"
+      },
+      {
+        "sceneId": "cafe",
+        "label": "Sidewalk café"
+      },
+      {
+        "sceneId": "seine_gold",
+        "label": "Seine at gold"
+      },
+      {
+        "sceneId": "blue_hour",
+        "label": "Café at blue hour"
+      }
+    ],
+    "styleDirections": {
+      "w": [
+        {
+          "id": "chic",
+          "label": "Parisian chic",
+          "blurb": "Effortless polish"
+        },
+        {
+          "id": "casual",
+          "label": "Casual",
+          "blurb": "Jeans & knits"
+        }
+      ],
+      "m": [
+        {
+          "id": "tailored",
+          "label": "Tailored",
+          "blurb": "Clean & tailored"
+        },
+        {
+          "id": "casual",
+          "label": "Casual",
+          "blurb": "Denim & easy"
+        }
+      ]
+    }
+  },
+  {
+    "packId": "nightout",
+    "title": "Night Out",
+    "tagline": "Rooftops, candlelight, city lights doing the most.",
+    "productId": "photo.pack.standard",
+    "sort": 5,
+    "stripVersion": 2,
+    "scenes": [
+      {
+        "sceneId": "arrival",
+        "label": "The arrival"
+      },
+      {
+        "sceneId": "neon_street",
+        "label": "City lights"
+      },
+      {
+        "sceneId": "rooftop",
+        "label": "Rooftop bar"
+      },
+      {
+        "sceneId": "dinner_booth",
+        "label": "Candlelit booth"
+      },
+      {
+        "sceneId": "golden_lights",
+        "label": "String lights"
+      },
+      {
+        "sceneId": "last_drink",
+        "label": "Last call"
+      }
+    ],
+    "styleDirections": {
+      "w": [
+        {
+          "id": "sleek",
+          "label": "Sleek",
+          "blurb": "Sleek & dressed-up"
+        },
+        {
+          "id": "edgy",
+          "label": "Edgy",
+          "blurb": "Leather & bold"
+        }
+      ],
+      "m": [
+        {
+          "id": "sharp",
+          "label": "Sharp",
+          "blurb": "Sharp & clean"
+        },
+        {
+          "id": "street",
+          "label": "Street",
+          "blurb": "Elevated street"
+        }
+      ]
+    }
+  },
+  {
+    "packId": "everyday",
+    "title": "Elevated Everyday",
+    "tagline": "Your normal life, shot like it deserves.",
+    "productId": "photo.pack.standard",
+    "sort": 6,
+    "stripVersion": 1,
+    "scenes": [
+      {
+        "sceneId": "window_coffee",
+        "label": "Window coffee"
+      },
+      {
+        "sceneId": "city_walk",
+        "label": "Coffee walk"
+      },
+      {
+        "sceneId": "bookstore",
+        "label": "Bookstore browse"
+      },
+      {
+        "sceneId": "lunch",
+        "label": "Outdoor lunch"
+      },
+      {
+        "sceneId": "park_gold",
+        "label": "Park at gold"
+      },
+      {
+        "sceneId": "home_window",
+        "label": "Sunday light"
+      }
+    ],
+    "styleDirections": {
+      "w": [
+        {
+          "id": "polished",
+          "label": "Polished",
+          "blurb": "Soft & polished"
+        },
+        {
+          "id": "relaxed",
+          "label": "Relaxed",
+          "blurb": "Knits & denim"
+        }
+      ],
+      "m": [
+        {
+          "id": "polished",
+          "label": "Polished",
+          "blurb": "Clean & intentional"
+        },
+        {
+          "id": "relaxed",
+          "label": "Relaxed",
+          "blurb": "Easy weekend"
+        }
+      ]
+    }
+  },
+  {
+    "packId": "alpine",
+    "title": "Alpine",
+    "tagline": "Snowy peaks, cozy lodges, golden light on the mountain.",
+    "productId": "photo.pack.standard",
+    "sort": 4,
+    "stripVersion": 1,
+    "scenes": [
+      {
+        "sceneId": "arrival",
+        "label": "Mountain arrival"
+      },
+      {
+        "sceneId": "summit",
+        "label": "Mountain top"
+      },
+      {
+        "sceneId": "village",
+        "label": "Snowy village"
+      },
+      {
+        "sceneId": "apres",
+        "label": "Après fireplace"
+      },
+      {
+        "sceneId": "golden_snow",
+        "label": "Golden snow"
+      },
+      {
+        "sceneId": "deck_closer",
+        "label": "Lodge deck"
+      }
+    ],
+    "styleDirections": {
+      "w": [
+        {
+          "id": "chalet",
+          "label": "Chalet",
+          "blurb": "Cozy & elegant"
+        },
+        {
+          "id": "cozy",
+          "label": "Cozy",
+          "blurb": "Knits & relaxed"
+        }
+      ],
+      "m": [
+        {
+          "id": "slopes",
+          "label": "Slopes",
+          "blurb": "On-mountain"
+        },
+        {
+          "id": "lodge",
+          "label": "Lodge",
+          "blurb": "Fireside cozy"
+        }
+      ]
+    }
+  },
+  {
+    "packId": "miami",
+    "title": "Miami",
+    "tagline": "Palms, turquoise water, sunset rooftops.",
+    "productId": "photo.pack.standard",
+    "sort": 3,
+    "stripVersion": 4,
+    "scenes": [
+      {
+        "sceneId": "beach_arrival",
+        "label": "Beach arrival"
+      },
+      {
+        "sceneId": "deco_street",
+        "label": "Art-deco street"
+      },
+      {
+        "sceneId": "boardwalk",
+        "label": "Boardwalk"
+      },
+      {
+        "sceneId": "beachside_table",
+        "label": "Beachside table"
+      },
+      {
+        "sceneId": "beach_golden",
+        "label": "Beach golden hour"
+      },
+      {
+        "sceneId": "poolside_dusk",
+        "label": "Poolside dusk"
+      }
+    ],
+    "styleDirections": {
+      "w": [
+        {
+          "id": "beach",
+          "label": "Beach",
+          "blurb": "Flowy & sun"
+        },
+        {
+          "id": "afterdark",
+          "label": "After-dark",
+          "blurb": "Sleek evening"
+        }
+      ],
+      "m": [
+        {
+          "id": "beach",
+          "label": "Beach",
+          "blurb": "Sea-breeze easy"
+        },
+        {
+          "id": "afterdark",
+          "label": "After-dark",
+          "blurb": "Sleek & dark"
+        }
+      ]
+    }
+  }
+]
