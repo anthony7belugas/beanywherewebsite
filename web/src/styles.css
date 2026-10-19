@@ -1418,6 +1418,11 @@ hr {
   font-weight: 600;
   color: #eee0c9;
 }
+.gallery-status { margin: 0 0 24px; }
+.gallery-status > svg { flex-shrink: 0; }
+.notice.gallery-status p { font-size: 13px; }
+.notice-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 20px; margin-top: 12px; }
+.notice-actions .button, .notice-actions .text-button { min-height: 44px; }
 .gallery-notice {
   margin: 24px 0;
 }

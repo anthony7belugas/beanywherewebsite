@@ -77,6 +77,8 @@ export default function App() {
   const [now, setNow] = useState(Date.now());
   const [offline, setOffline] = useState(!navigator.onLine);
   const [galleryError, setGalleryError] = useState("");
+  const [galleryRetry, setGalleryRetry] = useState(0);
+  const [galleryRefreshing, setGalleryRefreshing] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const main = useRef<HTMLElement>(null);
   const notify = useCallback((message: string) => {
@@ -164,22 +166,25 @@ export default function App() {
   }, []);
   useEffect(() => {
     if (!liveMode || !loaded || !(path === "/library" || path.startsWith("/gallery/"))) return;
+    setGalleryRefreshing(false);
     let alive = true, running = false;
     const refresh = async () => {
       if (running || document.hidden) return;
       running = true;
+      setGalleryRefreshing(true);
       try {
         await service.refreshGalleries?.();
         const next = await service.read();
         if (alive) { setState(next); setGalleryError(""); }
       } catch { if (alive) setGalleryError("Couldn’t refresh your photos. Check your connection and try again."); }
-      finally { running = false; }
+      finally { running = false; if (alive) setGalleryRefreshing(false); }
     };
+    if (galleryRetry) void refresh();
     const timer = setInterval(() => void refresh(), 15000);
     const focus = () => void refresh();
     window.addEventListener("focus", focus);
     return () => { alive = false; clearInterval(timer); window.removeEventListener("focus", focus); };
-  }, [path, loaded]);
+  }, [path, loaded, galleryRetry]);
   useEffect(() => {
     const update = () => setOffline(!navigator.onLine);
     window.addEventListener("online", update);
@@ -386,7 +391,17 @@ export default function App() {
               body="Find your completed shoots in My photos, or start a new one."
             />
           ))}
-        {galleryError && (path === "/library" || path.startsWith("/gallery/")) && <p className="notice" role="status">{galleryError}</p>}
+        {galleryError && (path === "/library" || path.startsWith("/gallery/")) && <div className="notice gallery-status" role="status">
+          <Info size={18} aria-hidden="true" />
+          <div>
+            <p>{galleryError}</p>
+            <div className="notice-actions">
+              <button className="button secondary" disabled={galleryRefreshing} onClick={() => setGalleryRetry(value => value + 1)}>
+                {galleryRefreshing ? "Reconnecting…" : "Retry connection"}
+              </button>
+            </div>
+          </div>
+        </div>}
         {path === "/library" && <Library shoots={state.shoots} email={state.recoveryEmail || state.email} now={now} onSettings={() => setDialog("account")} />}
         {currentShoot && (
           <Gallery
@@ -1558,6 +1573,19 @@ function Gallery({
             "Want a different take? Use the reshoot button beneath a photo to create a new version."}
           {reshootDeadline && <span className="reshoot-deadline">Use reshoots by {reshootDeadline}.</span>}</p>
       </div>
+      {!shoot.sample && shoot.emailRequestState === "failed" && <div className="notice gallery-status" role="status" aria-label="Email delivery update">
+        <Info size={18} aria-hidden="true" />
+        <div>
+          <p><strong>We couldn’t confirm your email delivery.</strong>{" "}
+            You can save your photos here, or contact us for help.</p>
+          <div className="notice-actions">
+            <button className="button secondary" disabled={!done.length || busy} onClick={() => void download(done)}>
+              {busy ? "Preparing…" : shareAvailable ? "Save photos" : "Download photos"}
+            </button>
+            <a className="text-button" href={`mailto:support@beanywhere.app?subject=${encodeURIComponent(`Web shoot ${shoot.id}`)}`}>Get help</a>
+          </div>
+        </div>
+      </div>}
       {!shoot.sample && <p className="order-support">Questions or problems with your order?{" "}
         <a href={`mailto:support@beanywhere.app?subject=${encodeURIComponent(`Web shoot ${shoot.id}`)}`}>Email support@beanywhere.app</a>.
       </p>}

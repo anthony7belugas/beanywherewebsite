@@ -166,7 +166,10 @@ export class LiveStudioService implements StudioService {
       if (epoch !== this.recoveryEpoch) return;
       this.recoveredJobs = result.jobs; this.recoveryEmail = result.email;
     })().catch(error => {
-      if (epoch === this.recoveryEpoch && this.recoveredJobs.length) {
+      // A failed connection is not a revoked gallery. Keep the last successful
+      // result in place; downloads and reshoots still verify current access.
+      const accessDenied = /^(?:functions\/)?(?:permission-denied|unauthenticated)$/.test(error?.code || "");
+      if (accessDenied && epoch === this.recoveryEpoch && this.recoveredJobs.length) {
         this.recoveredJobs = []; this.changed();
       }
       throw error;

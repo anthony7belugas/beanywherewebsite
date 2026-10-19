@@ -363,6 +363,47 @@ it("a stale gallery refresh cannot replace a newer email search", async () => {
   const state = await service.read(); expect(state.recoveryEmail).toBe("new@example.com"); expect(state.shoots).toHaveLength(0);
 });
 
+it.each([undefined, "functions/unavailable", "functions/deadline-exceeded", "functions/internal"])(
+  "keeps recovered galleries and email after a temporary refresh failure (%s)", async code => {
+    api.listJobs.mockResolvedValue([]);
+    api.listWebGalleries = vi.fn().mockResolvedValue({ email: "buyer@example.com", jobs: [job()], nextCursor: null });
+    const before = await service.read();
+    api.listWebGalleries.mockRejectedValueOnce(Object.assign(new Error("Connection lost"), { code }));
+    await expect(service.refreshGalleries()).rejects.toThrow("Connection lost");
+    expect(await service.read()).toEqual(before);
+    api.listWebGalleries.mockResolvedValue({ email: "buyer@example.com", jobs: [{ ...job(), reshootsLeft: 2 }], nextCursor: null });
+    await service.refreshGalleries();
+    expect((await service.read()).shoots[0].reshootsLeft).toBe(2);
+  },
+);
+
+it.each(["functions/permission-denied", "functions/unauthenticated", "permission-denied", "unauthenticated"])(
+  "removes recovered galleries when the server denies access (%s)", async code => {
+    api.listJobs.mockResolvedValue([]);
+    api.listWebGalleries = vi.fn().mockResolvedValue({ email: "buyer@example.com", jobs: [job()], nextCursor: null });
+    await service.read();
+    api.listWebGalleries.mockRejectedValueOnce(Object.assign(new Error("Access denied"), { code }));
+    await expect(service.refreshGalleries()).rejects.toThrow("Access denied");
+    expect((await service.read()).shoots).toHaveLength(0);
+  },
+);
+
+it("a stale access failure cannot clear a newer email search", async () => {
+  api.listJobs.mockResolvedValue([]);
+  api.listWebGalleries = vi.fn().mockResolvedValue({ email: "old@example.com", jobs: [job()], nextCursor: null });
+  await service.read();
+  let reject!: (reason: unknown) => void;
+  api.listWebGalleries.mockImplementationOnce(() => new Promise((_, fail) => { reject = fail; }));
+  const old = service.refreshGalleries(); await Promise.resolve();
+  api.recoverGalleries = vi.fn().mockResolvedValue({ email: "new@example.com", jobs: [{ ...job(), id: "new" }], nextCursor: null });
+  await service.recoverGalleries("new@example.com");
+  reject(Object.assign(new Error("Old access denied"), { code: "functions/permission-denied" }));
+  await expect(old).rejects.toThrow("Old access denied");
+  const state = await service.read();
+  expect(state.recoveryEmail).toBe("new@example.com");
+  expect(state.shoots.map(shoot => shoot.id)).toEqual(["new"]);
+});
+
 it("reads all recovery pages and deduplicates galleries already owned by this browser", async () => {
   api.listWebGalleries = vi.fn().mockImplementation(async (cursor?: string) => cursor
     ? { email: "buyer@example.com", jobs: [{ ...job(), id: "second" }], nextCursor: null }
