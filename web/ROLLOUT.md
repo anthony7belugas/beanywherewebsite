@@ -7,8 +7,8 @@ existing Cloudflare Pages project. **Public sales are not yet enabled.**
 `config/web` is temporarily in Stripe test mode and accepts checkout only for
 the explicitly allowlisted test browser. The homepage launch links are prepared
 locally but must not be published until the end-to-end test passes and the config
-returns to live mode. A browser confirmation to accept the test checkout terms
-is pending. No successful customer payment, photo generation or automatic email
+returns to live mode. The user requested this audit before the sandbox checkout.
+No successful customer payment, photo generation or automatic email
 has yet been verified end-to-end.
 
 ## Connections
@@ -48,7 +48,12 @@ Never add Stripe secrets, webhook secrets or service-account private keys here.
 ## Verified so far
 
 - 248 backend release checks, including both native production bundles.
-- 134 frontend tests, TypeScript and live production build.
+- 139 frontend tests, TypeScript and live production build.
+- 69 focused backend web tests after the latest audit: late checkout responses
+  cannot overwrite a newer result; refund-first notifications preserve the
+  reversed financial receipt without granting generation or queuing email.
+- Reopening a completed checkout uses a stable conversion event ID. Removing
+  reference photos also clears extra copies from local recovery checkpoints.
 - Actual deployed App Check, browser custom sign-in and private gallery query.
 - Website security headers and Firebase Storage CORS.
 - Private credential pattern scan of all 399 tracked site files: zero matches.

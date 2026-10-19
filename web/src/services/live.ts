@@ -48,9 +48,9 @@ export class LiveStudioService implements StudioService {
     } catch { return crypto.randomUUID(); }
   })();
   private observedOrders = new Set<string>();
-  track(name: string, params: Record<string, string | number | boolean>) {
+  track(name: string, params: Record<string, string | number | boolean>, stableEventId?: string) {
     // Telemetry must never block a checkout, retry, gallery or download.
-    const eventId = crypto.randomUUID();
+    const eventId = stableEventId || crypto.randomUUID();
     void this.api().then(api => api.recordEvent(name, { ...params, source: "web_studio",
       sessionId: this.eventSession }, eventId)).catch(() => {});
   }
@@ -122,7 +122,10 @@ export class LiveStudioService implements StudioService {
         (saved.uploadSessionId && patch.uploadSessionId && saved.uploadSessionId !== patch.uploadSessionId)) {
       await tx.done; throw new Error("Checkout recovery could not be verified. Contact support before paying again.");
     }
-    const next = { ...saved, ...patch };
+    const next = { ...saved, ...patch,
+      // After the server acknowledges an upload, recovery needs its ID, not another local copy.
+      ...(patch.uploadSessionId ? { draft: { ...saved.draft, references: [] } } : {}),
+    };
     await tx.objectStore("attempts").put(next, attempt.key);
     if (next.orderId) await tx.objectStore("orders").put(attempt.key, `${attempt.uid}/${next.orderId}`);
     await tx.done;
@@ -226,8 +229,12 @@ export class LiveStudioService implements StudioService {
         await this.finishDraft(attempt);
         if (!this.observedOrders.has(orderId)) {
           this.observedOrders.add(orderId);
+          const digest = new Uint8Array(await crypto.subtle.digest("SHA-256",
+            new TextEncoder().encode(`web-purchase-completed-v1:${api.session.uid}:${orderId}`)));
+          const hex = Array.from(digest.slice(0, 16), b => b.toString(16).padStart(2, "0")).join("");
+          const eventId = `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
           this.track("purchase_completed", { packId: attempt.draft.packId, styling: attempt.draft.styling,
-            ...(checkout.jobId ? { jobId: checkout.jobId } : {}) });
+            ...(checkout.jobId ? { jobId: checkout.jobId } : {}) }, eventId);
         }
       }
     }
@@ -287,8 +294,23 @@ export class LiveStudioService implements StudioService {
   async deleteAllPhotos() {
     this.checkoutAbort?.abort();
     await (await this.api()).deleteAllPhotos();
-    this.jobs = []; await this.local.clearReferences(); this.changed();
+    this.jobs = []; await this.clearReferences(); this.changed();
   }
-  clearReferences() { this.checkoutAbort?.abort(); return this.local.clearReferences(); }
-  reset() { this.checkoutAbort?.abort(); return this.local.reset(); }
+  private async clearRecoveryImages() {
+    const tx = (await this.database()).transaction("attempts", "readwrite");
+    for (const saved of await tx.store.getAll() as Attempt[]) {
+      if (saved.draft?.references?.length) {
+        await tx.store.put({ ...saved, draft: { ...saved.draft, references: [] } }, saved.key);
+      }
+    }
+    await tx.done;
+  }
+  async clearReferences() {
+    this.checkoutAbort?.abort();
+    await this.local.clearReferences(); await this.clearRecoveryImages();
+  }
+  async reset() {
+    this.checkoutAbort?.abort();
+    await this.local.reset(); await this.clearRecoveryImages();
+  }
 }

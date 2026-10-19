@@ -1,4 +1,5 @@
 import { beforeEach, expect, it, vi } from "vitest";
+import { openDB } from "idb";
 import { LiveStudioService, projectWebJob } from "../src/services/live";
 import { LocalStudioService } from "../src/services/local";
 import type { Draft } from "../src/lib/types";
@@ -20,12 +21,13 @@ let api: Record<string, any>;
 let service: LiveStudioService;
 let local: LocalStudioService;
 let draft: Draft;
+let namespace: string;
 beforeEach(async () => {
   api = {
     session: { uid, webAppId: "1:151223255006:web:7313193eb6302e7582674f", capabilityVersion: 1 },
     listJobs: vi.fn().mockResolvedValue([job()]), watchJobs: vi.fn().mockResolvedValue(() => {}),
     checkPackReadiness: vi.fn().mockResolvedValue({ ok: true, productId: "pack.paris" }),
-    recordConsent: vi.fn().mockResolvedValue(undefined),
+    recordConsent: vi.fn().mockResolvedValue(undefined), recordEvent: vi.fn().mockResolvedValue({ accepted: true }),
     uploadReferences: vi.fn().mockResolvedValue({ sessionId: "upload_1", uploadStatus: "completed" }),
     createOrder: vi.fn().mockResolvedValue({ orderId: "order_1" }),
     beginWebCheckout: vi.fn().mockResolvedValue(checkout()),
@@ -35,7 +37,7 @@ beforeEach(async () => {
     download: vi.fn().mockResolvedValue(new Blob(["photo"])), assertPhotos: vi.fn().mockResolvedValue(undefined),
     deleteAllPhotos: vi.fn().mockResolvedValue(undefined),
   };
-  const namespace = `live-test-${crypto.randomUUID()}`;
+  namespace = `live-test-${crypto.randomUUID()}`;
   local = new LocalStudioService(`${namespace}-drafts`);
   service = new LiveStudioService(async () => api as API, namespace);
   await local.startDraft("paris", "w", "casual");
@@ -195,4 +197,41 @@ it("does not map per-shoot deletion to the all-photos deletion endpoint", async 
 it("surfaces a denied initial gallery read rather than showing a misleading empty library", async () => {
   api.listJobs.mockRejectedValue(new Error("permission denied"));
   await expect(service.read()).rejects.toThrow("permission denied");
+});
+
+
+it("acknowledged uploads leave only recovery identifiers in the payment checkpoint", async () => {
+  api.createOrder.mockRejectedValueOnce(new Error("order response lost"));
+  await expect(service.checkout(draft, "buyer@example.com")).rejects.toThrow();
+  const db = await openDB(`${namespace}-operations`);
+  const saved = (await db.getAll("attempts"))[0];
+  expect(saved.uploadSessionId).toBe("upload_1");
+  expect(saved.draft.references).toEqual([]);
+  await service.checkout(draft, "buyer@example.com");
+  expect(api.uploadReferences).toHaveBeenCalledTimes(1);
+});
+
+it.each(["clearReferences", "reset", "deleteAllPhotos"] as const)("%s removes hidden checkpoint photos while preserving pending payment IDs", async method => {
+  api.uploadReferences.mockRejectedValueOnce(new Error("upload interrupted"));
+  await expect(service.checkout(draft, "buyer@example.com")).rejects.toThrow();
+  const db = await openDB(`${namespace}-operations`);
+  const saved = (await db.getAll("attempts"))[0];
+  expect(saved.draft.references).toHaveLength(4);
+  await db.put("attempts", { ...saved, orderId: "unresolved-order" }, saved.key);
+  await service[method]();
+  const after = await db.get("attempts", saved.key);
+  expect(after.draft.references).toEqual([]);
+  expect(after.orderId).toBe("unresolved-order");
+});
+
+it("reopening a completed purchase uses the same analytics event ID", async () => {
+  await service.checkout(draft, "buyer@example.com");
+  api.reconcileWebCheckout.mockResolvedValue(checkout("fulfilled"));
+  await service.payment("order_1");
+  const reopened = new LiveStudioService(async () => api as API, namespace);
+  await reopened.payment("order_1");
+  await vi.waitFor(() => expect(api.recordEvent.mock.calls.filter((c: any[]) => c[0] === "purchase_completed")).toHaveLength(2));
+  const events = api.recordEvent.mock.calls.filter((c: any[]) => c[0] === "purchase_completed");
+  expect(events[0][2]).toMatch(/^[a-f0-9-]{36}$/);
+  expect(events[0][2]).toBe(events[1][2]);
 });
