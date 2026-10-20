@@ -1641,7 +1641,7 @@ function Gallery({
           const ready = photo.readyAt <= now;
           const retry = photoRetryState(shoot, photo, now);
           const requestingRetry = retryPending.includes(photo.slotId);
-          const developing = photo.reshooting || (shoot.sample && photo.revision) || requestingRetry || photo.retrying || (!stopped && !["closed", "failed", "blocked"].includes(photo.status || ""));
+          const developing = photo.reshooting || (shoot.sample && photo.revision) || requestingRetry || photo.retrying || retry.working || (!stopped && !["retryable", "closed", "failed", "blocked"].includes(photo.status || ""));
           return (
             <article
               className={`photo-tile ${selected.includes(photo.slotId) ? "is-selected" : ""}`}

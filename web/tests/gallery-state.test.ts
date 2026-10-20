@@ -101,3 +101,11 @@ it("a claimed retry stays busy, and an exhausted retry has a final non-spinning 
   expect(photoRetryState(shoot, { ...photo, manualAttempts: 1 }, now))
     .toMatchObject({ available: false, working: false, label: "Couldn’t finish this photo" });
 });
+
+it("early automatic recovery stays in progress before the six-photo reveal", () => {
+  const shoot = { ...missingShoot(), status: "developing", generationState: "running" };
+  expect(photoRetryState(shoot, shoot.photos[0], now))
+    .toMatchObject({ available: false, working: true, label: "Trying again…" });
+  expect(photoRetryState(shoot, { ...shoot.photos[0], status: "blocked" }, now))
+    .toMatchObject({ available: false, working: true, label: "Finishing your shoot…" });
+});

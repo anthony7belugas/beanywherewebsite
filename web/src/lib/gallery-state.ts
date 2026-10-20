@@ -10,9 +10,12 @@ export function photoRetryState(shoot: Shoot, photo: Photo, now: number) {
   const available = !closed && !automatic && !photo.hasActiveClaim &&
     ["retryable", "blocked"].includes(photo.status || "") &&
     (photo.manualAttempts || 0) < Math.max(0, Math.min(2, shoot.manualRetriesPerSlot ?? 1));
-  const working = !closed && (!!automatic || !!photo.retrying);
+  const working = !shoot.sample && !expired && !shoot.deliveryClosed &&
+    !["failed", "refunded"].includes(shoot.status || "") &&
+    !["paused", "manual-review", "refund-hold"].includes(shoot.generationState || "") &&
+    (!!automatic || !!photo.retrying);
   return { available, working, label: shoot.generationState === "paused" ? "Paused"
-    : photo.retrying ? "Retrying…" : working ? "Trying again…"
+    : photo.retrying ? "Retrying…" : working ? photo.status === "blocked" ? "Finishing your shoot…" : "Trying again…"
     : available ? "One more try available" : "Couldn’t finish this photo" };
 }
 
