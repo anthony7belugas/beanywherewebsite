@@ -1584,7 +1584,7 @@ function Gallery({
           </div>
         </div>
       </div>}
-      {!shoot.sample && <p className="order-support">Questions or problems with your order?{" "}
+      {!shoot.sample && !shootFailed && <p className="order-support">Questions or problems with your order?{" "}
         <a href={`mailto:support@beanywhere.app?subject=${encodeURIComponent(`Web shoot ${shoot.id}`)}`}>Email support@beanywhere.app</a>.
       </p>}
       {reshooting > 0 && <div className="notice" role="status"><LoaderCircle size={18} className="spin" /><p>Your new version is being created. Your other photos are ready to save.</p></div>}
@@ -1618,7 +1618,8 @@ function Gallery({
         </p>
       </div>}
       {stopped && done.length < 12 && <div className="notice"><Info size={18} /><p>{shootFailed
-        ? `Your shoot couldn’t be completed. ${done.length ? `You can still save the ${done.length} ${done.length === 1 ? "photo that is" : "photos that are"} ready. This shoot won’t be emailed.` : "No photos were completed, so there’s no delivery email to wait for."}`
+        ? <>We couldn’t complete your shoot. <a href={`mailto:support@beanywhere.app?subject=${encodeURIComponent(`Web shoot ${shoot.id}`)}`}>Contact support for help</a>.{" "}
+          {done.length ? `You can still save the ${done.length} ${done.length === 1 ? "photo that is" : "photos that are"} ready. This shoot won’t be emailed.` : "No photos were completed, so there’s no delivery email to wait for."}</>
         : `${shoot.generationState === "paused" ? "Generation is temporarily paused." : "Some photos could not be completed."}${done.length > 0 ? " You can still save your available photos." : ""}`}</p></div>}
       <div className="gallery-toolbar">
         <span>{done.length} of 12 photos ready</span>

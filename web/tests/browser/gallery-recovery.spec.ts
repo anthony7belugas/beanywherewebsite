@@ -181,11 +181,17 @@ for (const count of [0, 5]) test(`a failed ${count}-photo shoot never promises a
     window.dispatchEvent(new Event("focus"));
   }, count);
   await expect(page.locator(".lead")).toContainText(`This shoot needs attention · ${count} of 12 ready`);
-  await expect(page.locator(".gallery")).toContainText("Your shoot couldn’t be completed.");
+  await expect(page.locator(".gallery")).toContainText("We couldn’t complete your shoot.");
+  await expect(page.getByRole("link", { name: "Contact support for help", exact: true }))
+    .toHaveAttribute("href", "mailto:support@beanywhere.app?subject=Web%20shoot%20recovery-test");
   await expect(page.locator(".gallery")).toContainText(count ? "This shoot won’t be emailed." : "no delivery email to wait for");
   await expect(page.locator(".gallery")).not.toContainText("Your photos will be sent");
   await expect(page.locator(".progress-panel")).toHaveCount(0);
   await expect(page.locator(".reshoot-guide")).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Retry .*for free/ })).toHaveCount(0);
   if (!count) await expect(page.locator(".section-heading button")).toBeDisabled();
+  else {
+    await expect(page.locator(".section-heading button")).toBeEnabled();
+    await expect(page.getByRole("button", { name: /^Open .*take/ })).toHaveCount(count);
+  }
 });

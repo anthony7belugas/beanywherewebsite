@@ -22,3 +22,7 @@ The October 19 finishing pass removes favorites controls, leads the shoot pages 
 Validation for this pass: 240 frontend tests, 58 Chromium/WebKit browser checks, all 255 backend release checks, and desktop/390px/320px visual review. Payment, generation, and delivery edge cases use isolated fixtures; this pass does not charge a real card or generate a customer shoot.
 
 October 19 audit fixes: campaign styling is remembered and carried through public navigation, including when storage is unavailable. Failed shoots show the available count without promising email or advertising reshoots. Gallery delivery warnings also use verified provider feedback from the backend, scoped to the current delivery request. New web delivery emails use “photo delivery email.” Validation: 240 frontend tests, 68 Chromium/WebKit checks and 258 backend release checks. No customer payments, generation or email sends are used for release verification.
+
+Failed web shoots now link directly to support from the failure message, including the shoot reference, and keep completed photos available to save. The shared backend closes future failed web shoots without creating replacement credits; existing credits and native compensation are preserved. Deploy `onJobCreatedGenerate`, `recoverStuckJobs`, and `closeExpiredDeliveryWindows` before publishing this update. The existing automatic retries, partial-delivery emails, and simultaneous photo loading remain in place.
+
+Validation: all 259 backend release checks, 240 frontend tests, and 16 Chromium/WebKit gallery checks passed.
