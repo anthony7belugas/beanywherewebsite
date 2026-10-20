@@ -98,10 +98,11 @@ it("coalesces duplicate checkout taps", async () => {
   expect(api.beginWebCheckout).toHaveBeenCalledTimes(1);
 });
 
-it("does not replace the email of an unresolved payment attempt", async () => {
+it("does not replace the email until an unresolved payment is confirmed expired", async () => {
   api.beginWebCheckout.mockRejectedValueOnce(new Error("unknown"));
   await expect(service.checkout(draft, "buyer@example.com")).rejects.toThrow();
-  await expect(service.checkout(draft, "different@example.com")).rejects.toThrow("original delivery email");
+  api.cancelWebCheckout.mockRejectedValueOnce(new Error("Could not verify unpaid checkout"));
+  await expect(service.checkout(draft, "different@example.com")).rejects.toThrow("Could not verify");
   expect(api.beginWebCheckout).toHaveBeenCalledTimes(1);
 });
 
@@ -693,4 +694,23 @@ it("each original-browser gallery retains its own paid delivery email", async ()
   await service.checkout(draft, 'first@example.com');
   api.listJobs.mockResolvedValue([{ ...job(), orderId: 'order_1' }]);
   expect((await service.read()).shoots[0].deliveryEmail).toBe('first@example.com');
+});
+
+it("editing an email after returning from Stripe expires the unpaid checkout before replacing it", async () => {
+  await service.checkout(draft, 'old@example.com');
+  api.createOrder.mockResolvedValue({ orderId: 'order_2' });
+  api.beginWebCheckout.mockResolvedValue({ ...checkout(), orderId: 'order_2' });
+  await expect(service.checkout(draft, 'correct@example.com')).resolves.toMatchObject({ orderId: 'order_2', state: 'open' });
+  expect(api.cancelWebCheckout).toHaveBeenCalledExactlyOnceWith('order_1');
+  expect(api.beginWebCheckout.mock.calls.at(-1)).toEqual(['order_2', 'correct@example.com', directAttribution()]);
+  expect(api.cancelWebCheckout.mock.invocationCallOrder[0]).toBeLessThan(api.createOrder.mock.invocationCallOrder[1]);
+});
+
+it("a payment that wins an email edit opens the paid order without a new checkout", async () => {
+  await service.checkout(draft, 'paid@example.com');
+  api.cancelWebCheckout.mockResolvedValue(checkout('fulfilled'));
+  await expect(service.checkout(draft, 'edited@example.com')).resolves.toMatchObject({ state: 'fulfilled', jobId: 'job_1' });
+  expect(api.createOrder).toHaveBeenCalledTimes(1);
+  expect(api.beginWebCheckout).toHaveBeenCalledTimes(1);
+  expect((await local.read()).email).toBe('paid@example.com');
 });

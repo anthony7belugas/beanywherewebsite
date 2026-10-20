@@ -249,7 +249,8 @@ export class LiveStudioService implements StudioService {
       // checkout between checking for an earlier payment and saving this attempt.
       const tx = db.transaction("attempts", "readwrite");
       const attempts = await tx.store.getAll() as Attempt[];
-      const earlier = attempts.find(value => value.uid === api.session.uid && value.key !== key && !value.settled);
+      const earlier = attempts.find(value => value.uid === api.session.uid && !value.settled &&
+        (value.key !== key || value.email !== email));
       if (!earlier) {
         attempt = attempts.find(value => value.key === key);
         if (!attempt) {
