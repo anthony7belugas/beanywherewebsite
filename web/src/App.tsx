@@ -1,3 +1,4 @@
+import { trackWeb } from "../storefront/analytics.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
@@ -847,6 +848,8 @@ function Upload({
   );
   async function add(files: File[]) {
     if (preparing.current || !files.length) return;
+    const analyticsStart=performance.now();
+    service.track?.("reference_selection_started",{packId:draft.packId,styling:draft.styling,count:files.length});
     preparing.current = true;
     const operation = preparation.current;
     setBusy(true);
@@ -874,6 +877,8 @@ function Upload({
       if (operation !== preparation.current) return;
       if (refs.length !== draft.references.length)
         await service.updateDraft(draft, { references: refs });
+      service.track?.("reference_selection_completed",{packId:draft.packId,styling:draft.styling,count:refs.length-draft.references.length,durationMs:Math.round(performance.now()-analyticsStart)});
+      if(errors.length)trackWeb("reference_selection_failed",{packId:draft.packId,count:errors.length,error_code:"preparation_or_validation"});
       if (errors.length) notify(errors.join(" "));
     } catch (e) {
       notify((e as Error).message);
@@ -1143,6 +1148,8 @@ function Checkout({
     setAttemptStarted(true);
     setError("");
     try {
+      service.track?.("delivery_email_submitted",{packId:draft.packId,styling:draft.styling});
+      trackWeb("begin_checkout",{packId:draft.packId,styleId:draft.styleId,styling:draft.styling});
       const shoot = await service.checkout(draft, checked.email);
       if ("kind" in shoot && shoot.kind === "payment") {
         if (shoot.url) { window.location.assign(shoot.url); return; }
@@ -1153,6 +1160,7 @@ function Checkout({
         notify("Demo shoot created. No payment was taken.");
       }
     } catch (e) {
+      service.track?.("purchase_failed",{packId:draft.packId,styling:draft.styling,reason:"unknown"});
       setError((e as Error).message);
     } finally {
       setBusy(false);
@@ -1206,6 +1214,7 @@ function Checkout({
           </p>
           {emailSuggestion && <p className="email-suggestion">Did you mean{" "}
             <button type="button" className="text-button" disabled={busy} onClick={() => {
+              trackWeb("delivery_email_changed",{action:"suggestion_accepted"});
               setEmail(emailSuggestion); setError("");
               void service.updateDraft(draft, { email: emailSuggestion }).catch(error => setError((error as Error).message));
             }}>{emailSuggestion}</button>?
@@ -1380,6 +1389,9 @@ function Gallery({
   const [busy, setBusy] = useState(false);
   const photos = shoot.photos;
   const done = shoot.photos.filter((p) => p.readyAt <= now);
+  useEffect(()=>{trackWeb("gallery_opened",{packId:shoot.packId,styleId:shoot.styleId,styling:shoot.styling,count:done.length});},[shoot.id]);
+  const measuredMilestones=useRef(new Set<string>());
+  useEffect(()=>{for(const threshold of [6,12]){const key=shoot.id+":"+threshold;if(done.length>=threshold&&!measuredMilestones.current.has(key)){measuredMilestones.current.add(key);service.track?.(threshold===6?"results_revealed":"results_completed",{jobId:shoot.id,packId:shoot.packId,styling:shoot.styling,count:done.length});}}},[done.length,shoot.id,shoot.packId,shoot.styling]);
   const shootFailed = !shoot.sample && shoot.status === "failed";
   const providerFailed = ["bounced", "failed", "suppressed"].includes(shoot.emailDeliveryFeedback || "");
   const emailFailed = shoot.emailDeliveryFeedback !== "delivered" && (providerFailed || shoot.emailRequestState === "failed");
@@ -1447,6 +1459,7 @@ function Gallery({
   const confirmReshoot = async () => {
     if (!reshootConfirmation || confirmationUnavailable || reshootRequest.current || busy) return;
     const { shootId, photo } = reshootConfirmation;
+    trackWeb("reshoot_requested",{packId:shoot.packId,styleId:shoot.styleId,styling:shoot.styling});
     reshootRequest.current = true;
     setReshootPending(true);
     setReshootConfirmation(null);
@@ -1460,8 +1473,12 @@ function Gallery({
       const unavailable = galleryState(current, Date.now()).reshootUnavailable;
       if (unavailable) throw new Error(unavailable);
       await service.reshoot(shootId, photo.slotId, crypto.randomUUID());
+      trackWeb("reshoot_accepted",{packId:shoot.packId,styling:shoot.styling});
       notify(shoot.sample ? "Demo reshoot started. The sample image will be reused."
         : "Your reshoot request has been checked. The gallery updates as it finishes.");
+    } catch(error) {
+      trackWeb("reshoot_failed",{packId:shoot.packId,error_code:"request_failed"});
+      throw error;
     } finally {
       reshootRequest.current = false;
       setReshootPending(false);
@@ -1470,6 +1487,8 @@ function Gallery({
   const download = async (list: Photo[]) => {
     if (downloadOperation.current) return;
     const controller = new AbortController();
+    const downloadStarted=performance.now();
+    trackWeb("download_started",{packId:shoot.packId,count:list.length});
     downloadOperation.current = controller;
     setBusy(true);
     try {
@@ -1504,10 +1523,11 @@ function Gallery({
         setPreparedPhotos({ ...prepared, sources: list.map(photo => ({ ...photo })) });
       } else {
         prepared.download();
+        service.track?.(list.length===1?"photo_saved":"save_all",{packId:shoot.packId,styling:shoot.styling,count:list.length,durationMs:Math.round(performance.now()-downloadStarted)});
         notify(shoot.sample ? "Sample download prepared." : "Your download is ready.");
       }
     } catch (e) {
-      if (!controller.signal.aborted) notify((e as Error).message);
+      if (!controller.signal.aborted) { service.track?.("download_failed",{packId:shoot.packId,count:list.length,reason:"unknown"}); notify((e as Error).message); }
     } finally {
       downloadOperation.current = null;
       setBusy(false);
@@ -1785,13 +1805,14 @@ function Gallery({
               // Invoke directly from this tap: preparation/network work must not consume
               // the transient user activation required by Safari's native share sheet.
               await navigator.share({ files: preparedPhotos.files });
+              trackWeb("photo_saved",{packId:shoot.packId,count:preparedPhotos.files.length,action:"share_sheet_completed"});
               setPreparedPhotos(null);
             } catch (e) {
               if ((e as Error).name !== "AbortError") setShareError("Sharing isn’t available right now. You can download your photos below.");
             } finally { setSharing(false); }
           }}>{sharing ? "Opening…" : "Save or share photos"}</button>
           {shareError && <p className="form-error" role="alert">{shareError}</p>}
-          <button className="text-button" disabled={sharing} onClick={() => { preparedPhotos.download(); setPreparedPhotos(null); }}>
+          <button className="text-button" disabled={sharing} onClick={() => { preparedPhotos.download(); trackWeb("save_all",{packId:shoot.packId,count:preparedPhotos.sources.length,action:"download_handed_to_browser"}); setPreparedPhotos(null); }}>
             {preparedPhotos.files.length === 1 ? "Download photo instead" : "Download ZIP instead"}
           </button>
         </div>

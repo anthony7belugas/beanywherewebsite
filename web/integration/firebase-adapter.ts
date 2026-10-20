@@ -1,3 +1,4 @@
+import { analyticsContext } from "../storefront/analytics.js";
 import type { Acquisition } from "../storefront/acquisition.js";
 /**
  * SDK operations bound to one server-admitted browser session. Native identities
@@ -255,10 +256,13 @@ export function createFirebaseAdapter(deps: AdapterDependencies) {
       stopAuth();
       invalidate();
     },
-    async recordEvent(name: string, params: Record<string, string | number | boolean>, eventId: string) {
-      return call("recordClientEvent", { name, params, eventId, expectedUid: session.uid,
-        occurredAtMs: Date.now() }, 10000);
+    async recordEvent(name: string, params: Record<string, string | number | boolean>, eventId: string, occurredAtMs = Date.now()) {
+      return call<{ disposition?: string }>("recordClientEvent", { name, params, eventId, expectedUid: session.uid,
+        occurredAtMs }, 10000);
     },
+    getAnalyticsProfile() { return call<{analyticsAvailable:boolean;analytics:boolean;preferenceRevisions:{analytics:number}}>("getLaunchProfile",{}); },
+    setAnalyticsPreference(enabled:boolean, revision:number) { return call<{applied:boolean;analytics:boolean;preferenceRevisions:{analytics:number}}>("setLaunchPreferences",{analytics:enabled,expectedUid:session.uid,noticeVersion:2,expectedRevisions:{analytics:revision}}); },
+    recordWebObservation(data:Record<string,unknown>) { return call<{disposition?:string}>("recordWebObservation",data,10000); },
     async catalog(): Promise<Pack[]> {
       await ready();
       assertSession();
@@ -499,7 +503,7 @@ export function createFirebaseAdapter(deps: AdapterDependencies) {
       return stop;
     },
     recoverGalleries(email: string) {
-      return call<GalleryPage>("recoverWebGalleries", { email });
+      return call<GalleryPage>("recoverWebGalleries", { email, analytics:analyticsContext(),eventId:crypto.randomUUID() });
     },
     listWebGalleries(cursor?: string) {
       return call<GalleryPage>("listWebGalleries", cursor ? { cursor } : {});

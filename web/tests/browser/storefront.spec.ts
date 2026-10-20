@@ -5,7 +5,7 @@ async function publicPages(page: Page) {
   const files: Record<string, string> = {
     '/': 'index.html', '/shoots/paris/': 'shoots/paris/index.html',
     '/storefront.js': 'web/storefront/storefront.js', '/acquisition.js': 'web/storefront/acquisition.js',
-    '/storefront.css': 'web/storefront/storefront.css',
+    '/storefront.css': 'web/storefront/storefront.css', '/analytics.js':'analytics.js',
   };
   await page.route('http://127.0.0.1:4178/**', route => {
     const pathname = new URL(route.request().url()).pathname;

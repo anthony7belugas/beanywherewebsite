@@ -1,5 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { openDB } from "idb";
+import { queueStudioEvent } from "../storefront/analytics.js";
+vi.mock("../storefront/analytics.js",async importOriginal=>({...await importOriginal<typeof import("../storefront/analytics.js")>(),queueStudioEvent:vi.fn(),setEventTransport:vi.fn()}));
 import { directAttribution } from "../storefront/acquisition.js";
 import { LiveStudioService, projectWebJob } from "../src/services/live";
 import { LocalStudioService } from "../src/services/local";
@@ -24,6 +26,7 @@ let local: LocalStudioService;
 let draft: Draft;
 let namespace: string;
 beforeEach(async () => {
+  vi.mocked(queueStudioEvent).mockClear();
   api = {
     session: { uid, webAppId: "1:151223255006:web:7313193eb6302e7582674f", capabilityVersion: 1 },
     listJobs: vi.fn().mockResolvedValue([job()]), watchJobs: vi.fn().mockResolvedValue(() => {}),
@@ -340,8 +343,8 @@ it("reopening a completed purchase uses the same analytics event ID", async () =
   await service.payment("order_1");
   const reopened = new LiveStudioService(async () => api as API, namespace);
   await reopened.payment("order_1");
-  await vi.waitFor(() => expect(api.recordEvent.mock.calls.filter((c: any[]) => c[0] === "purchase_completed")).toHaveLength(2));
-  const events = api.recordEvent.mock.calls.filter((c: any[]) => c[0] === "purchase_completed");
+  await vi.waitFor(() => expect(vi.mocked(queueStudioEvent).mock.calls.filter((c: any[]) => c[0] === "purchase_completed")).toHaveLength(2));
+  const events = vi.mocked(queueStudioEvent).mock.calls.filter((c: any[]) => c[0] === "purchase_completed");
   expect(events[0][2]).toMatch(/^[a-f0-9-]{36}$/);
   expect(events[0][2]).toBe(events[1][2]);
 });

@@ -38,7 +38,7 @@ export function validateStudioBuild(command: string, mode: string, env: Record<s
 
 export function studioCsp(live: boolean, dev: boolean) {
   const development = dev ? " ws://127.0.0.1:4178 ws://localhost:4178" : "";
-  const script = live ? " https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/" : "";
-  const connect = live ? " https://content-firebaseappcheck.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com https://firebasestorage.googleapis.com https://us-central1-bethere-3d7de.cloudfunctions.net https://www.google.com/recaptcha/" : "";
+  const script = live ? " https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/ https://www.googletagmanager.com https://static.cloudflareinsights.com" : "";
+  const connect = live ? " https://content-firebaseappcheck.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com https://firebasestorage.googleapis.com https://us-central1-bethere-3d7de.cloudfunctions.net https://www.google.com/recaptcha/ https://www.google-analytics.com https://region1.google-analytics.com https://analytics.google.com https://cloudflareinsights.com" : "";
   return `default-src 'self'; script-src 'self'${script}; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self'; connect-src 'self'${connect}${development}; frame-src ${live ? "https://www.google.com/recaptcha/ https://recaptcha.google.com/recaptcha/" : "'none'"}; object-src 'none'; base-uri 'self'; form-action 'none'${dev ? "" : "; upgrade-insecure-requests"}`;
 }

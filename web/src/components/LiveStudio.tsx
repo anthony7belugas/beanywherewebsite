@@ -1,3 +1,4 @@
+import { analyticsAllowed, setAnalyticsAllowed, trackWeb } from "../../storefront/analytics.js";
 import { useEffect, useRef, useState } from "react";
 import { LoaderCircle, Download, ShieldCheck } from "lucide-react";
 import { service } from "../services";
@@ -90,6 +91,7 @@ export function StudioImage({ shootId, photo, alt, previewBlob, onPreviewReady, 
 }
 
 export function PaymentReturn({ orderId, shoots }: { orderId: string; shoots: StudioState["shoots"] }) {
+  useEffect(()=>{trackWeb("payment_return");},[]);
   const [checkout, setCheckout] = useState<Extract<CheckoutResult, { kind: "payment" }> | null>(null);
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
@@ -175,6 +177,8 @@ export function LiveInfo({ type }: { type: "help" | "privacy" | "terms" }) {
 
 export function LiveAccount({ state, notify }: { state: StudioState; notify: (text: string) => void }) {
   const [busy, setBusy] = useState(false), [confirm, setConfirm] = useState(false), [error, setError] = useState("");
+  const [usage,setUsage]=useState(analyticsAllowed());
+  useEffect(()=>{const update=()=>setUsage(analyticsAllowed());window.addEventListener('beanywhere-analytics-choice',update);return()=>window.removeEventListener('beanywhere-analytics-choice',update);},[]);
   async function run(fn: () => Promise<void>, success: string) {
     setBusy(true); setError("");
     try { await fn(); notify(success); setConfirm(false); }
@@ -186,6 +190,9 @@ export function LiveAccount({ state, notify }: { state: StudioState; notify: (te
     <p>{state.recoveryEmail || state.email || "Your delivery email is collected at checkout."}</p>
     <p>On another browser, open My photos and enter your photo delivery email to find your galleries.</p>
     <p><Download size={16} /> {state.shoots.length} photoshoots</p>
+    <h3>Usage settings</h3>
+    <label><input type="checkbox" checked={usage} onChange={event=>{setAnalyticsAllowed(event.target.checked);setUsage(analyticsAllowed());}} /> Share website usage data</label>
+    <p>Helps us understand visits, steps that fail, and returning browsers. Your email and photos are not sent to Google Analytics. This browser’s privacy signal is respected. Payment and delivery records are still needed to provide your shoot.</p>
     <h3>Your photos</h3>
     <button className="button secondary full" disabled={busy || (!state.draft && !state.savedSelfies)}
       onClick={() => void run(() => service.clearReferences(), "Saved selfies removed from this browser.")}>Remove saved selfies</button>

@@ -1,7 +1,9 @@
+import { initAnalytics, trackWeb, analyticsAllowed, setAnalyticsAllowed } from './analytics.js';
 import { currentAttribution, attributedLink } from './acquisition.js';
 /* The public catalog works before browser sign-in. Only fixed catalog choices enter the studio. */
 (() => {
   currentAttribution();
+  initAnalytics();
   const query = new URLSearchParams(location.search);
   let saved;
   try { saved = localStorage.getItem('beanywhere-public-styling'); } catch { /* Browsing works without storage. */ }
@@ -40,9 +42,30 @@ import { currentAttribution, attributedLink } from './acquisition.js';
   }
   document.querySelectorAll('[data-styling]').forEach(button => button.addEventListener('click', () => {
     styling = button.dataset.styling;
+    trackWeb('styling_selected',{styling,packId:pack});
     try { localStorage.setItem('beanywhere-public-styling', styling); } catch { /* Optional preference. */ }
     render();
   }));
-  looks.forEach(button => button.addEventListener('click', () => { look = button.dataset.look; render(); }));
+  looks.forEach(button => button.addEventListener('click', () => { look = button.dataset.look; trackWeb('style_direction_selected',{packId:pack,styling,styleId:look}); render(); }));
   render();
+  trackWeb(pack ? 'view_item' : 'view_item_list',{packId:pack,styling,styleId:look});
+  const observer=new IntersectionObserver(entries=>{for(const entry of entries)if(entry.isIntersecting){trackWeb('view_item',{packId:entry.target.dataset.shootLink,styling,surface:'card'});observer.unobserve(entry.target);}},{threshold:0.5});
+  document.querySelectorAll('[data-shoot-link]').forEach(card=>observer.observe(card));
+  document.querySelectorAll('details').forEach((item,index)=>item.addEventListener('toggle',()=>{if(item.open)trackWeb('faq_opened',{position:index+1});}));
+  document.addEventListener('click',event=>{
+    const link=event.target.closest('a[href]'); if(!link)return;
+    const url=new URL(link.href,location.href);
+    const action=link.dataset.start!==undefined?'add_selfies':link.dataset.shootLink?'select_shoot':url.hash==='#shoots'?'create_photos':url.hash==='#/library'?'my_photos':url.hostname==='play.google.com'?'google_play':url.protocol==='mailto:'?'support':url.hostname==='www.instagram.com'?'instagram':null;
+    if(action)trackWeb(action==='select_shoot'?'select_item':'cta_clicked',{action,packId:link.dataset.shootLink || pack,styling,styleId:look});
+  });
+  const privacy=document.querySelector('[data-analytics-settings]');
+  privacy?.addEventListener('click',()=>{
+    const dialog=document.createElement('dialog');
+    const title=document.createElement('h2');title.textContent='Website usage data';
+    const note=document.createElement('p');note.textContent='Help us understand visits and improve the photoshoot. This measures pages, device type, approximate location and actions. It does not send your email or photos to Google Analytics. Your browser’s privacy signal is respected.';
+    const label=document.createElement('label'),input=document.createElement('input');input.type='checkbox';input.checked=analyticsAllowed();
+    label.append(input,document.createTextNode(' Share website usage data'));
+    const close=document.createElement('button');close.type='button';close.textContent='Save';close.addEventListener('click',()=>{setAnalyticsAllowed(input.checked);dialog.close();dialog.remove();});
+    dialog.append(title,note,label,close);document.body.append(dialog);dialog.showModal();
+  });
 })();

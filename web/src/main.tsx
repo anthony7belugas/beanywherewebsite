@@ -1,9 +1,11 @@
+import { initAnalytics, trackWeb } from "../storefront/analytics.js";
 import React from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./styles.css";
 import { currentAttribution } from "../storefront/acquisition.js";
 currentAttribution();
+initAnalytics({enabled:import.meta.env.VITE_STUDIO_MODE === "live"});
 
 class Boundary extends React.Component<
   { children: React.ReactNode },
@@ -13,6 +15,7 @@ class Boundary extends React.Component<
   static getDerivedStateFromError() {
     return { failed: true };
   }
+  componentDidCatch() { trackWeb("web_error",{error_code:"render_failed"}); }
   render() {
     return this.state.failed ? (
       <main className="fatal">

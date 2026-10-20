@@ -1,3 +1,4 @@
+import { analyticsContext, analyticsAllowed, analyticsPreference, setAnalyticsAllowed, onAnalyticsPreference, trackWeb, queueStudioEvent, setEventTransport } from "../../storefront/analytics.js";
 import { openDB } from "idb";
 import { currentAttribution, type Acquisition } from "../../storefront/acquisition.js";
 import { LocalStudioService } from "./local";
@@ -55,20 +56,18 @@ export function projectWebJob(job: NativeJobProjection & { id: string }, favorit
 export class LiveStudioService implements StudioService {
   readonly mode = "live" as const;
   private apiPromise?: Promise<API>;
-  private eventSession = (() => {
-    try {
-      const key = "beanywhere-web-event-session";
-      const saved = sessionStorage.getItem(key);
-      const value = saved && /^[a-f0-9-]{36}$/.test(saved) ? saved : crypto.randomUUID();
-      sessionStorage.setItem(key, value); return value;
-    } catch { return crypto.randomUUID(); }
-  })();
   private observedOrders = new Set<string>();
   track(name: string, params: Record<string, string | number | boolean>, stableEventId?: string) {
-    // Telemetry must never block a checkout, retry, gallery or download.
-    const eventId = stableEventId || crypto.randomUUID();
-    void this.api().then(api => api.recordEvent(name, { ...params, source: "web_studio",
-      sessionId: this.eventSession }, eventId)).catch(() => {});
+    const eventId=stableEventId || crypto.randomUUID();
+    trackWeb(name,params,eventId);
+    // Only existing business events go to Firebase. Routine browsing stays in GA4.
+    const backendNames=new Set(["pack_opened","checkout_viewed","upload_screen_viewed","reference_selection_started","reference_selection_completed","upload_started","upload_completed","upload_failed","consent_completed","purchase_initiated","purchase_completed","purchase_failed","photo_saved","save_all","download_failed","save_all_partial","library_viewed","library_failed","results_revealed","results_completed","slot_retry","support_opened"]);
+    if(!backendNames.has(name))return;
+    const clean={...params};
+    // Email-recovered galleries never acquire the original account's identity.
+    if(clean.jobId && !this.jobs.some(job=>job.id===clean.jobId)) { delete clean.jobId; delete clean.slotId; delete clean.sceneId; clean.restored=true; }
+    queueStudioEvent(name,clean,eventId);
+    void this.api().catch(()=>{});
   }
   private db?: ReturnType<typeof openDB>;
   private listeners = new Set<() => void>();
@@ -99,7 +98,38 @@ export class LiveStudioService implements StudioService {
     this.local.subscribe(() => this.changed());
   }
   private api() {
-    return this.apiPromise ??= this.connect().catch(error => { this.apiPromise = undefined; throw error; });
+    return this.apiPromise ??= this.connect().then(api=>{
+      setEventTransport(row=>api.recordEvent(row.name,row.params,row.id,row.at));
+      if(api.getAnalyticsProfile) {
+        let syncing=false,again=false,retry:ReturnType<typeof setTimeout>|undefined,failures=0,observedSession='';
+        const sync=async()=>{
+          if(syncing){again=true;return;}
+          syncing=true;clearTimeout(retry);
+          try {
+            const profile=await api.getAnalyticsProfile();
+            const desired=analyticsPreference();
+            if(desired===null && profile.analyticsAvailable && !profile.analytics)setAnalyticsAllowed(false);
+            else if(desired!==null && (desired===false || profile.analyticsAvailable) && profile.analytics!==desired) {
+              const result=await api.setAnalyticsPreference(desired,profile.preferenceRevisions.analytics);
+              if(!result.applied && result.analytics!==desired)throw new Error('Preference changed; retry.');
+            }
+            const context=analyticsContext();
+            if(context.enabled && context.sessionId!==observedSession){
+              const observed=await api.recordWebObservation({kind:"session",eventId:crypto.randomUUID(),context});
+              if(observed.disposition==='accepted'||observed.disposition==='duplicate')observedSession=context.sessionId || '';
+            }
+            failures=0;
+          }catch{
+            failures++;retry=setTimeout(()=>void sync(),Math.min(300000,30000*failures));
+          }finally{syncing=false;if(again){again=false;void sync();}}
+        };
+        onAnalyticsPreference(()=>void sync());
+        window.addEventListener('online',()=>void sync());
+        window.addEventListener('beanywhere-analytics-choice',()=>void sync());
+        void sync();
+      }
+      return api;
+    }).catch(error => { this.apiPromise = undefined; throw error; });
   }
   private database() {
     return this.db ??= openDB(`${this.namespace}-operations`, 1, {
@@ -171,13 +201,15 @@ export class LiveStudioService implements StudioService {
     return { email: first.email, jobs };
   }
   async recoverGalleries(email: string) {
+    this.track("gallery_lookup_started",{});
     const epoch = ++this.recoveryEpoch;
     this.galleryKnown = false; this.nextGalleryRefreshAt = 0;
     this.recoveredJobs = []; this.recoveryEmail = ""; this.changed();
-    const result = await this.galleryPages(await (await this.api()).recoverGalleries(email.trim()));
+    const result = await this.galleryPages(await (await this.api()).recoverGalleries(email.trim())).catch(error=>{this.track("gallery_lookup_failed",{reason:"unknown"});throw error;});
     if (epoch !== this.recoveryEpoch) throw new Error("Your gallery search changed. Try again.");
     this.rememberGalleries(result); this.changed();
     this.track("library_viewed", { count: result.jobs.length, restored: true });
+    this.track("gallery_lookup_completed",{count:result.jobs.length});
     return result.jobs.length;
   }
   private rememberGalleries(result: { email: string; jobs: (NativeJobProjection & { id: string })[] }) {
@@ -280,6 +312,7 @@ export class LiveStudioService implements StudioService {
       throw new Error("Add your own 4–6 selfies before paying.");
     }
     const api = await this.api();
+    void api.recordWebObservation?.({kind:"checkout_email",eventId:crypto.randomUUID(),context:analyticsContext(),email}).catch(()=>{});
     const key = `${api.session.uid}/${reviewKey(review)}`;
     const db = await this.database();
     let attempt: Attempt | undefined;
@@ -333,10 +366,11 @@ export class LiveStudioService implements StudioService {
           return new Blob([bytes], { type: "image/jpeg" });
         });
         this.track("upload_started", { packId: draft.packId, styling: draft.styling });
+        const uploadStarted=performance.now();
         const uploaded = await api.uploadReferences(blobs, attempt.uploadAttempt, attempt.draft.wearsGlasses,
-          () => {}, signal);
+          () => {}, signal).catch(error=>{this.track("upload_failed",{packId:draft.packId,styling:draft.styling,reason:signal?.aborted?"cancelled":"unknown"});throw error;});
         attempt = await this.checkpoint(attempt, { uploadSessionId: uploaded.sessionId });
-        this.track("upload_completed", { packId: draft.packId, styling: draft.styling });
+        this.track("upload_completed", { packId: draft.packId, styling: draft.styling, count:blobs.length,durationMs:Math.round(performance.now()-uploadStarted) });
       }
       await this.current(review, signal);
       const order = await api.createOrder({ packId: attempt.draft.packId,

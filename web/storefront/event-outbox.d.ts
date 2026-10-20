@@ -1,0 +1,2 @@
+export type QueuedEvent={id:string;name:string;params:Record<string,string|number|boolean>;at:number};
+export function createEventOutbox(options:{read:()=>unknown;write:(rows:QueuedEvent[])=>void;allowed:()=>boolean;now?:()=>number;schedule?:(fn:()=>void,ms:number)=>any;cancel?:(timer:any)=>void}):{enqueue:(row:QueuedEvent)=>void;setTransport:(fn:(row:QueuedEvent)=>Promise<{disposition?:string}>)=>void;flush:()=>Promise<void>;clear:()=>void};

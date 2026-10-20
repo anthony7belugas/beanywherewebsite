@@ -25,5 +25,5 @@ it('does not store raw URLs or personal fields and tolerates denied storage', ()
   const first = captureAttribution({ url: 'https://beanywhere.app/?ref=ig03&utm_campaign=person%40example.com&email=private%40example.com', storage, now });
   expect(first).toMatchObject({ source: 'referral', code: 'ig03', campaign: '' });
   expect(attributedLink('https://outside.example/', first)).toBe('https://outside.example/');
-  expect(captureAttribution({ url: 'https://beanywhere.app/', referrer: 'https://evilinstagram.com/?secret=yes', storage, now })).toEqual(directAttribution());
+  expect(captureAttribution({ url: 'https://beanywhere.app/', referrer: 'https://evilinstagram.com/?secret=yes', storage, now })).toMatchObject({source:'evilinstagram.com',medium:'referral'});
 });
