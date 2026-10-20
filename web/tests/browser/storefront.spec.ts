@@ -5,8 +5,8 @@ async function publicPages(page: Page, policyGate: Promise<void> = Promise.resol
   const files: Record<string, string> = {
     '/': 'index.html', '/shoots/paris/': 'shoots/paris/index.html',
     '/storefront.js': 'storefront.js', '/acquisition.js': 'acquisition.js',
-    '/storefront.css': 'storefront.css', '/analytics.js':'analytics.js', '/usage-settings.js':'usage-settings.js',
-    '/public-pages.js': 'public-pages.js', '/usage-settings.css': 'usage-settings.css', '/styles.css': 'styles.css',
+    '/storefront.css': 'storefront.css', '/analytics.js':'analytics.js',
+    '/public-pages.js': 'public-pages.js', '/styles.css': 'styles.css',
     '/support': 'support.html', '/privacy': 'privacy.html', '/terms': 'terms.html',
   };
   await page.route('https://us-central1-bethere-3d7de.cloudfunctions.net/getWebAnalyticsPolicy', async route => {

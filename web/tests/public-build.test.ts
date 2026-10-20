@@ -8,7 +8,7 @@ it('regenerating policies preserves published website analytics and mobile reten
   const root = new URL('../../', import.meta.url);
   const temporary = mkdtempSync(join(tmpdir(), 'beanywhere-policy-build-'));
   try {
-    for (const file of ['generate.mjs', 'legal-data.mjs', 'public-pages.js', 'usage-settings.css'])
+    for (const file of ['generate.mjs', 'legal-data.mjs', 'public-pages.js'])
       copyFileSync(new URL(file, root), join(temporary, file));
     execFileSync(process.execPath, ['generate.mjs'], { cwd: temporary, stdio: 'pipe' });
     for (const file of ['privacy.html', 'terms.html'])

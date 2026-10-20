@@ -1,11 +1,9 @@
 import { initAnalytics, trackWeb } from './analytics.js?v=590f078b49ed9f53';
 import { currentAttribution, attributedLink } from './acquisition.js?v=75c8d0f7a609bd01';
-import { bindUsageSettings } from './usage-settings.js?v=88c1ead576415cb0';
 
 // Informational pages share browsing preferences and identity, without Studio sign-in.
 currentAttribution();
 initAnalytics();
-bindUsageSettings();
 function refreshLinks() {
   document.querySelectorAll('a[href]').forEach(link => {
     const href = link.getAttribute('href');

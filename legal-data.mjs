@@ -5,7 +5,7 @@
 
 export const LEGAL_INFO = {
   name: 'Besties, Inc.',                     // registered entity (matches your approved Besties docs)
-  effectiveDate: 'October 18, 2026',
+  effectiveDate: 'October 20, 2026',
   supportEmail: 'support@beanywhere.app', // your real support address
   accountDeletionUrl: 'https://beanywhere.app/support#delete-account',
   state: 'California',                       // your home state
@@ -98,7 +98,7 @@ export const PRIVACY = [
     `Web payment, checkout, delivery, and dispute records may include your email and are retained for fulfillment, support, accounting, and fraud prevention. This is an exception to the contact-free restricted transaction records described above. You can delete photos created in the current browser through My photos → Photo settings or request account/contact deletion at ${I.supportEmail}; legally required payment records may remain with us and payment providers. Browser-local drafts can be removed in Photo settings or by clearing website data.`,
     `We separate web activity from Apple and Android activity in operational and conversion reporting. Our business records track successful purchases and generation outcomes without sending your photos or email as analytics event parameters.`,
     `Website usage measurement uses Google Analytics to understand referring sites and tagged campaign links, visited screens, selected photoshoots, browser and device type, language, approximate location, engagement time, page performance, checkout steps, and returning browsers. We use a random browser identifier and sessions that restart after 30 minutes of inactivity. These identifiers do not prove a person’s identity. We do not send your email, selfies, generated photos, form contents, or private gallery links to Google Analytics, and advertising personalization is disabled.`,
-    `You can turn optional website usage collection off in Usage settings on the public website or My photos → Photo settings in the Studio. We also respect a Global Privacy Control or Do Not Track signal in your browser. Essential authentication, payment, delivery, and abuse-prevention records remain necessary to operate your shoot.`,
+    `Website usage measurement is enabled by default. We respect a Global Privacy Control or Do Not Track signal in your browser. Essential authentication, payment, delivery, and abuse-prevention records remain necessary to operate your shoot.`,
     `When you submit a delivery email at checkout or to find galleries, we may retain a private, keyed representation of that email with the submitting browser and session. It helps us compare activity associated with the same submitted address; it is unverified and does not merge accounts or change gallery access. These optional connections, checkout-measurement links, and daily website Analytics exports are retained in our restricted Google Cloud project without a scheduled expiration, unless removed in response to a valid deletion request or a later retention policy. To request removal of website usage data, contact support; known browser identifiers are included in our analytics deletion process.`,
   ] },
   { title: '8. Children', body: [

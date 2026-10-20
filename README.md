@@ -74,7 +74,7 @@ with their original license in `assets/fonts/Fraunces-LICENSE.txt`.
 
 All download buttons point to `com.besties.photo` on Google Play. The displayed
 $3.99 USD pack price is the US listing price; local pricing appears in the app.
-The Web Studio uses the existing Firebase backend for photo delivery and payment. Website analytics measures browsing and server-confirmed outcomes; Usage settings controls optional collection. Raw email addresses and photos are excluded from Google Analytics. Website releases are separate from native app releases.
+The Web Studio uses the existing Firebase backend for photo delivery and payment. Website analytics measures browsing and server-confirmed outcomes and is enabled by default, while respecting browser privacy signals and saved preferences. Raw email addresses and photos are excluded from Google Analytics. Website releases are separate from native app releases.
 
 When changing `landing.css`, update the `?v=` value in the homepage stylesheet
 link to the first 10 characters of the file's SHA-256. This makes returning

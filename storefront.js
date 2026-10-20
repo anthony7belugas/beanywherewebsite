@@ -1,4 +1,3 @@
-import { bindUsageSettings } from './usage-settings.js?v=88c1ead576415cb0';
 import { initAnalytics, trackWeb } from './analytics.js?v=590f078b49ed9f53';
 import { currentAttribution, attributedLink } from './acquisition.js?v=75c8d0f7a609bd01';
 /* The public catalog works before browser sign-in. Only fixed catalog choices enter the studio. */
@@ -63,5 +62,4 @@ import { currentAttribution, attributedLink } from './acquisition.js?v=75c8d0f7a
     const action=link.dataset.start!==undefined?'add_selfies':link.dataset.shootLink?'select_shoot':url.hash==='#shoots'?'create_photos':url.hash==='#/library'?'my_photos':url.hostname==='play.google.com'?'google_play':url.protocol==='mailto:'?'support':url.hostname==='www.instagram.com'?'instagram':null;
     if(action)trackWeb(action==='select_shoot'?'select_item':'cta_clicked',{action,packId:link.dataset.shootLink || pack,styling,styleId:look});
   });
-  bindUsageSettings();
 })();

@@ -1,6 +1,16 @@
 import { test, expect, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 const root = new URL("../../../", import.meta.url);
+// Exercise saved-preference handling directly now that the customer UI is removed.
+const analyticsModule = "/analytics.js?v=" + createHash("sha256")
+  .update(readFileSync(new URL("analytics.js", root))).digest("hex").slice(0, 16);
+async function setPreference(page: Page, allowed: boolean) {
+  await page.evaluate(async ({ modulePath, allowed }) => {
+    const analytics = await import(/* @vite-ignore */ modulePath);
+    analytics.setAnalyticsAllowed(allowed);
+  }, { modulePath: analyticsModule, allowed });
+}
 async function setup(
   page: Page,
   policyGate: Promise<void> = Promise.resolve(),
@@ -31,9 +41,7 @@ async function setup(
               "/storefront.css",
               "/acquisition.js",
               "/analytics.js",
-              "/usage-settings.js",
               "/public-pages.js",
-              "/usage-settings.css",
               "/styles.css",
             ].includes(pathname)
           ? pathname.slice(1)
@@ -79,6 +87,8 @@ test("first page and early clicks survive policy loading; safe metadata follows 
   await expect
     .poll(async () => JSON.stringify(await records(page)))
     .toContain("styling_selected");
+  await expect(page.getByRole("button", { name: "Usage settings" })).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   const first = await records(page);
   expect(JSON.stringify(first)).not.toContain("private@example.com");
   expect(
@@ -99,6 +109,7 @@ test("first page and early clicks survive policy loading; safe metadata follows 
   const next = (await records(page)).find(
     (row) => row[0] === "config",
   )?.[2] as typeof config;
+  await expect(page.getByRole("button", { name: "Usage settings" })).toHaveCount(0);
   expect(next.client_id).toBe(config.client_id);
   expect(next.session_id).toBe(config.session_id);
 });
@@ -120,11 +131,7 @@ for (const blocked of [false, true])
     await expect
       .poll(async () => JSON.stringify(await records(page)))
       .toContain("page_view");
-    await page.getByRole("button", { name: "Usage settings" }).click();
-    await page
-      .getByRole("checkbox", { name: "Share website usage data" })
-      .uncheck();
-    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await setPreference(page, false);
     const count = (await records(page)).filter(
       (row) => row[0] === "event",
     ).length;
@@ -134,10 +141,7 @@ for (const blocked of [false, true])
     expect(
       (await records(page)).filter((row) => row[0] === "event"),
     ).toHaveLength(count);
-    await page.getByRole("button", { name: "Usage settings" }).click();
-    await expect(
-      page.getByRole("checkbox", { name: "Share website usage data" }),
-    ).not.toBeChecked();
+    expect(await page.evaluate(() => (window as unknown as Record<string, unknown>)["ga-disable-G-2VT9EWH1B5"])).toBe(true);
   });
 
 test("a browser privacy signal prevents loading Analytics", async ({
@@ -155,10 +159,7 @@ test("a browser privacy signal prevents loading Analytics", async ({
   await page
     .getByRole("button", { name: "Men’s styling", exact: true })
     .click();
-  await page.getByRole("button", { name: "Usage settings" }).click();
-  await expect(
-    page.getByRole("checkbox", { name: "Share website usage data" }),
-  ).not.toBeChecked();
+  expect(await page.evaluate(() => (window as unknown as Record<string, unknown>)["ga-disable-G-2VT9EWH1B5"])).toBe(true);
   expect(tags).toBe(0);
   expect(await records(page)).toHaveLength(0);
 });
@@ -168,17 +169,14 @@ test("enabling measurement records the current page once without counting opted-
   await page.addInitScript(() => localStorage.setItem("beanywhere-analytics-choice", "false"));
   await setup(page);
   await page.goto("/");
-  await page.getByRole("button", { name: "Usage settings" }).click();
-  await expect(page.getByRole("checkbox", { name: "Share website usage data" })).not.toBeChecked();
+  await expect(page.getByRole("button", { name: "Usage settings" })).toHaveCount(0);
   await page.clock.runFor(60000);
   expect((await records(page)).filter(row => row[0] === "event")).toHaveLength(0);
-  await page.getByRole("checkbox", { name: "Share website usage data" }).check();
-  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await setPreference(page, true);
   await expect.poll(async () => (await records(page)).filter(row => row[0] === "event" && row[1] === "page_view").length).toBe(1);
   for (const row of (await records(page)).filter(row => row[0] === "event" && row[1] === "engagement_tick"))
     expect((row[2] as { duration_ms: number }).duration_ms).toBeLessThan(1000);
-  await page.getByRole("button", { name: "Usage settings" }).click();
-  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await setPreference(page, true);
   expect((await records(page)).filter(row => row[0] === "event" && row[1] === "page_view")).toHaveLength(1);
 });
 
@@ -263,14 +261,10 @@ test("scroll depth can be measured again on a newly measured page after opting b
   await scroll();
   const count = async () => (await records(page)).filter(row => row[0] === "event" && row[1] === "scroll_depth").length;
   expect(await count()).toBe(4);
-  await page.getByRole("button", { name: "Usage settings" }).click();
-  await page.getByRole("checkbox", { name: "Share website usage data" }).uncheck();
-  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await setPreference(page, false);
   await scroll();
   expect(await count()).toBe(4);
-  await page.getByRole("button", { name: "Usage settings" }).click();
-  await page.getByRole("checkbox", { name: "Share website usage data" }).check();
-  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await setPreference(page, true);
   await scroll();
   expect(await count()).toBe(8);
 });
@@ -302,9 +296,7 @@ test("two tabs share a browser and session and apply withdrawal across both tabs
   const config = async (p: Page) => (await records(p)).find(row => row[0] === "config")?.[2] as Record<string, unknown>;
   expect((await config(other)).client_id).toBe((await config(page)).client_id);
   expect((await pageViews(other))[0].session_id).toBe((await pageViews(page))[0].session_id);
-  await other.getByRole("button", { name: "Usage settings" }).click();
-  await other.getByRole("checkbox", { name: "Share website usage data" }).uncheck();
-  await other.getByRole("button", { name: "Save", exact: true }).click();
+  await setPreference(other, false);
   await expect.poll(() => page.evaluate(() => (window as unknown as Record<string, unknown>)["ga-disable-G-2VT9EWH1B5"])).toBe(true);
   const count = (await records(page)).filter(row => row[0] === "event").length;
   await page.getByRole("button", { name: "Men’s styling", exact: true }).click();
@@ -424,7 +416,7 @@ test("blur, hide and pagehide do not count the same interval twice", async ({ pa
 });
 
 
-for (const path of ["/support", "/privacy", "/terms"]) test(`informational page ${path} records safe browsing and offers working usage settings`, async ({ page }) => {
+for (const path of ["/support", "/privacy", "/terms"]) test(`informational page ${path} records safe browsing without showing usage settings`, async ({ page }) => {
   await setup(page);
   const backend: string[] = [];
   page.on("request", request => {
@@ -435,14 +427,12 @@ for (const path of ["/support", "/privacy", "/terms"]) test(`informational page 
   expect((await pageViews(page))[0].page_location).toBe("https://beanywhere.app" + path);
   expect((await records(page)).filter(row => row[1] === "view_item_list" || row[1] === "view_item")).toHaveLength(0);
   expect(JSON.stringify(await records(page))).not.toContain("private@example.com");
-  await page.getByRole("button", { name: "Usage settings" }).click();
-  await page.getByRole("checkbox", { name: "Share website usage data" }).uncheck();
-  await page.getByRole("button", { name: "Save", exact: true }).click();
-  expect(await page.getByRole("dialog").count()).toBe(0);
+  await setPreference(page, false);
+  await expect(page.getByRole("button", { name: "Usage settings" })).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.getByRole("link", { name: "BeAnywhere", exact: true }).click();
   await expect(page).toHaveURL(/\/$/);
-  await page.getByRole("button", { name: "Usage settings" }).click();
-  await expect(page.getByRole("checkbox", { name: "Share website usage data" })).not.toBeChecked();
+  await expect(page.getByRole("button", { name: "Usage settings" })).toHaveCount(0);
   expect(await pageViews(page)).toHaveLength(0);
   expect(backend).toEqual([]);
 });

@@ -21,16 +21,13 @@ async function versionedScript(name, dependencies) {
   await writeFile(new URL(`${name}.js`,root),source);
   return source;
 }
-await versionedScript('usage-settings',['analytics']);
-const storefront = await versionedScript('storefront',['analytics','acquisition','usage-settings']);
-const publicPages = await versionedScript('public-pages',['analytics','acquisition','usage-settings']);
-await copyFile(new URL('../storefront/usage-settings.css',import.meta.url),new URL('usage-settings.css',root));
-const publicVersion = revision(publicPages), settingsVersion = revision(await readFile(new URL('usage-settings.css',root)));
+const storefront = await versionedScript('storefront',['analytics','acquisition']);
+const publicPages = await versionedScript('public-pages',['analytics','acquisition']);
+const publicVersion = revision(publicPages);
 for (const name of ['support','privacy','terms']) {
   const path = new URL(`${name}.html`,root);
   const html = (await readFile(path,'utf8'))
-    .replace(/src="\/public-pages\.js(?:\?v=[a-f0-9]+)?"/,`src="/public-pages.js?v=${publicVersion}"`)
-    .replace(/href="\/usage-settings\.css(?:\?v=[a-f0-9]+)?"/,`href="/usage-settings.css?v=${settingsVersion}"`);
+    .replace(/src="\/public-pages\.js(?:\?v=[a-f0-9]+)?"/,`src="/public-pages.js?v=${publicVersion}"`);
   await writeFile(path,html);
 }
 const storefrontVersion = revision(storefront);
@@ -39,10 +36,10 @@ const packs = JSON.parse(await readFile(new URL('../src/lib/catalog.json', impor
 const esc = value => String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const cover = (pack, styling = 'w') => `/studio/assets/covers/${pack.packId}-${styling}.webp`;
 const header = `<a class="skip-link" href="#main">Skip to content</a><header class="site-header"><div class="site-width header-inner"><a class="wordmark" href="/" aria-label="BeAnywhere home">BeAnywhere</a><nav aria-label="Main"><a class="android-link" href="https://play.google.com/store/apps/details?id=com.besties.photo">Google Play ↗</a><a href="/studio/#/library">My photos</a></nav></div></header>`;
-const footer = `<footer class="site-footer site-width"><div><a class="wordmark" href="/">BeAnywhere</a><p>© 2026 Besties, Inc. · Ages 18+</p></div><nav aria-label="Support and apps"><a href="https://play.google.com/store/apps/details?id=com.besties.photo">Get the Android app ↗</a><a href="/support">Support</a><a href="/privacy">Privacy</a><button type="button" data-analytics-settings>Usage settings</button><a href="/terms">Terms</a><a href="https://www.instagram.com/beanywhere.app/">Instagram</a></nav></footer>`;
+const footer = `<footer class="site-footer site-width"><div><a class="wordmark" href="/">BeAnywhere</a><p>© 2026 Besties, Inc. · Ages 18+</p></div><nav aria-label="Support and apps"><a href="https://play.google.com/store/apps/details?id=com.besties.photo">Get the Android app ↗</a><a href="/support">Support</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="https://www.instagram.com/beanywhere.app/">Instagram</a></nav></footer>`;
 const toggle = `<div class="styling-toggle" role="group" aria-label="Wardrobe styling"><button type="button" data-styling="w" aria-pressed="true">Women’s styling</button><button type="button" data-styling="m" aria-pressed="false">Men’s styling</button></div>`;
 function page({ title, description, path, image, body, packId = '' }) {
- return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="index,follow"><meta name="theme-color" content="#15110e"><title>${esc(title)}</title><meta name="description" content="${esc(description)}"><link rel="canonical" href="https://beanywhere.app${path}"><meta property="og:type" content="website"><meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(description)}"><meta property="og:url" content="https://beanywhere.app${path}"><meta property="og:image" content="https://beanywhere.app${image}"><meta name="twitter:card" content="summary_large_image"><link rel="icon" href="/icon.png" type="image/png"><link rel="apple-touch-icon" href="/icon.png"><link rel="preload" href="/assets/fonts/fraunces-semibold.ttf" as="font" type="font/ttf" crossorigin><link rel="stylesheet" href="/storefront.css?v=5"></head><body ${packId ? `data-shoot="${packId}"` : ''}>${header}<main id="main" class="site-width">${body}</main>${footer}<script type="module" src="/storefront.js?v=${storefrontVersion}"></script></body></html>\n`;
+ return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="index,follow"><meta name="theme-color" content="#15110e"><title>${esc(title)}</title><meta name="description" content="${esc(description)}"><link rel="canonical" href="https://beanywhere.app${path}"><meta property="og:type" content="website"><meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(description)}"><meta property="og:url" content="https://beanywhere.app${path}"><meta property="og:image" content="https://beanywhere.app${image}"><meta name="twitter:card" content="summary_large_image"><link rel="icon" href="/icon.png" type="image/png"><link rel="apple-touch-icon" href="/icon.png"><link rel="preload" href="/assets/fonts/fraunces-semibold.ttf" as="font" type="font/ttf" crossorigin><link rel="stylesheet" href="/storefront.css?v=6"></head><body ${packId ? `data-shoot="${packId}"` : ''}>${header}<main id="main" class="site-width">${body}</main>${footer}<script type="module" src="/storefront.js?v=${storefrontVersion}"></script></body></html>\n`;
 }
 const cards = packs.map((p,i) => `<a class="shoot-card" data-shoot-link="${p.packId}" href="/shoots/${p.packId}/"><div class="card-heading"><h3>${esc(p.title)}</h3><span>$3.99</span></div><img data-cover="${p.packId}" src="${cover(p)}" alt="${esc(p.title)} — women’s styling preview" width="720" height="960" loading="${i < 3 ? 'eager' : 'lazy'}"><p>${esc(p.tagline)}</p></a>`).join('\n');
 await writeFile(new URL('index.html', root), page({title:'BeAnywhere — Your next photoshoot.',description:'You, somewhere extraordinary. Choose your setting and add your selfies. Create 12 photos online for $3.99, or get BeAnywhere on Google Play.',path:'/',image:'/assets/play-feature.jpg',body:`

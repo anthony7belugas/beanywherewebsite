@@ -59,7 +59,6 @@ function page({ title, slug, otherSlug, otherLabel, sections }) {
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
-  <link rel="stylesheet" href="/usage-settings.css?v=${revision('usage-settings.css')}">
 </head>
 <body>
   <header class="topbar">
@@ -83,7 +82,7 @@ ${renderSections(sections)}
 
   <footer class="site-footer">
     <div class="wrap">
-      © ${new Date().getFullYear()} ${esc(LEGAL_INFO.name)} · <a href="/${otherSlug}">${otherLabel}</a> · <a href="/support">Support</a> · <a href="/support#delete-account">Delete account</a> · <a href="mailto:${EMAIL}">Contact</a> · <button type="button" data-analytics-settings>Usage settings</button>
+      © ${new Date().getFullYear()} ${esc(LEGAL_INFO.name)} · <a href="/${otherSlug}">${otherLabel}</a> · <a href="/support">Support</a> · <a href="/support#delete-account">Delete account</a> · <a href="mailto:${EMAIL}">Contact</a>
     </div>
   </footer>
 <script type="module" src="/public-pages.js?v=${revision('public-pages.js')}"></script>
