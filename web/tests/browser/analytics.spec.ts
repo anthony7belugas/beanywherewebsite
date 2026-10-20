@@ -64,7 +64,7 @@ test("first page and early clicks survive policy loading; safe metadata follows 
   });
   await setup(page, gate);
   await page.goto(
-    "/?utm_source=google&utm_medium=organic&email=private@example.com",
+    "/?utm_source=google&utm_medium=organic&utm_campaign=autumn&utm_content=hero&source_code=friend&email=private@example.com",
   );
   await page
     .getByRole("button", { name: "Men’s styling", exact: true })
@@ -84,6 +84,9 @@ test("first page and early clicks survive policy loading; safe metadata follows 
     session_id: number;
   };
   expect(config.client_id).toMatch(/^\d+\.\d{10}$/);
+  expect(config).toMatchObject({ campaign_source: "google", campaign_name: "autumn", session_source: "google", is_test: 1 });
+  for (const row of first.filter(row => row[0] === "event"))
+    expect(Object.keys(row[2] as Record<string, unknown>).length).toBeLessThanOrEqual(25);
   await page.locator('[data-shoot-link="paris"]').click();
   await expect
     .poll(async () => JSON.stringify(await records(page)))
@@ -153,4 +156,23 @@ test("a browser privacy signal prevents loading Analytics", async ({
   ).not.toBeChecked();
   expect(tags).toBe(0);
   expect(await records(page)).toHaveLength(0);
+});
+
+test("enabling measurement records the current page once without counting opted-out time", async ({ page }) => {
+  await page.clock.install();
+  await page.addInitScript(() => localStorage.setItem("beanywhere-analytics-choice", "false"));
+  await setup(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Usage settings" }).click();
+  await expect(page.getByRole("checkbox", { name: "Share website usage data" })).not.toBeChecked();
+  await page.clock.runFor(60000);
+  expect((await records(page)).filter(row => row[0] === "event")).toHaveLength(0);
+  await page.getByRole("checkbox", { name: "Share website usage data" }).check();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect.poll(async () => (await records(page)).filter(row => row[0] === "event" && row[1] === "page_view").length).toBe(1);
+  for (const row of (await records(page)).filter(row => row[0] === "event" && row[1] === "engagement_tick"))
+    expect((row[2] as { engagement_time_msec: number }).engagement_time_msec).toBeLessThan(1000);
+  await page.getByRole("button", { name: "Usage settings" }).click();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  expect((await records(page)).filter(row => row[0] === "event" && row[1] === "page_view")).toHaveLength(1);
 });

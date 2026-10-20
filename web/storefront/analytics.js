@@ -152,6 +152,7 @@ let policy = { available: false, mode: "choice" };
 let memory,
   initialized = false,
   loaded = false,
+  configuredSession = "",
   lastPage = "",
   preferenceListener;
 export function analyticsAllowed() {
@@ -257,6 +258,18 @@ function load() {
   });
   gtag("js", new Date());
   const state = identity();
+  configureSession(state);
+  const script = document.createElement("script");
+  script.async = true;
+  script.src = "https://www.googletagmanager.com/gtag/js?id=" + MEASUREMENT_ID;
+  script.onerror = () => {
+    loaded = false;
+  };
+  document.head.append(script);
+}
+function configureSession(state) {
+  const session = state.sessionAttribution || directAttribution();
+  configuredSession = state.sessionId;
   gtag("config", MEASUREMENT_ID, {
     send_page_view: false,
     client_id: state.clientId,
@@ -268,14 +281,18 @@ function load() {
     page_title: "BeAnywhere " + safePage(window.location.href),
     page_referrer: safeReferrer(),
     ignore_referrer: /(^|\.)stripe\.com$/.test(referrerHost()),
+    // These defaults also cover Google's automatic session/engagement events.
+    is_test: testTraffic() ? 1 : 0,
+    session_source: session.source,
+    session_medium: session.medium,
+    session_campaign: session.campaign,
+    // Campaign settings belong to the stream configuration, leaving room for
+    // action metadata within Google's per-event parameter limit.
+    campaign_source: session.source === "direct" ? "(direct)" : session.source,
+    campaign_medium: session.medium === "none" ? "(none)" : session.medium,
+    campaign_name: session.campaign,
+    campaign_content: session.content,
   });
-  const script = document.createElement("script");
-  script.async = true;
-  script.src = "https://www.googletagmanager.com/gtag/js?id=" + MEASUREMENT_ID;
-  script.onerror = () => {
-    loaded = false;
-  };
-  document.head.append(script);
 }
 function referrerHost() {
   try {
@@ -303,6 +320,7 @@ export function trackWeb(name, params = {}, eventId = crypto.randomUUID()) {
     const state = identity(),
       last = currentAttribution(),
       session = state.sessionAttribution || directAttribution();
+    if (configuredSession !== state.sessionId) configureSession(state);
     const values = {
       ...safeParams(params),
       event_id: eventId,
@@ -324,13 +342,6 @@ export function trackWeb(name, params = {}, eventId = crypto.randomUUID()) {
       session_campaign: session.campaign,
       is_test: testTraffic() ? 1 : 0,
     };
-    if (session.source !== "direct")
-      Object.assign(values, {
-        campaign_source: session.source,
-        campaign_medium: session.medium,
-        campaign_name: session.campaign,
-        campaign_content: session.content,
-      });
     if (name === "engagement_tick")
       values.engagement_time_msec = Math.round(Number(params.durationMs) || 0);
     gtag("event", name, values);
@@ -427,17 +438,19 @@ function startAnalytics() {
   if (initialized) return;
   initialized = true;
   window["ga-disable-" + MEASUREMENT_ID] = !analyticsAllowed();
+  let measuring = analyticsAllowed();
   let focusedAt =
-    document.visibilityState === "visible" ? performance.now() : 0;
+    measuring && document.visibilityState === "visible" ? performance.now() : 0;
   const engagement = () => {
     const now = performance.now();
     if (focusedAt && document.visibilityState === "visible")
       trackWeb("engagement_tick", {
         durationMs: Math.min(30000, now - focusedAt),
       });
-    focusedAt = document.visibilityState === "visible" ? now : 0;
+    focusedAt = analyticsAllowed() && document.visibilityState === "visible" ? now : 0;
   };
   const page = () => {
+    if (!analyticsAllowed()) return;
     const next = safePage(window.location.href);
     if (next !== lastPage) {
       engagement();
@@ -447,6 +460,16 @@ function startAnalytics() {
       });
     }
   };
+  window.addEventListener("beanywhere-analytics-choice", () => {
+    const allowed = analyticsAllowed();
+    if (allowed === measuring) return;
+    measuring = allowed;
+    // Start a measured visit when collection begins; never include the earlier
+    // opted-out interval in engagement or silently skip this page's funnel entry.
+    focusedAt = allowed && document.visibilityState === "visible" ? performance.now() : 0;
+    lastPage = "";
+    if (allowed) page();
+  });
   page();
   for (const event of earlyEvents.splice(0))
     trackWeb(event.name, event.params, event.eventId);
@@ -462,7 +485,7 @@ function startAnalytics() {
         });
       focusedAt = 0;
     } else {
-      focusedAt = performance.now();
+      focusedAt = analyticsAllowed() ? performance.now() : 0;
       void flushEvents();
     }
   });
