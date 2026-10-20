@@ -86,6 +86,7 @@ export type StudioState = {
   preferredStyling: Styling;
   email: string;
   recoveryEmail?: string;
+  galleryRefreshError?: string;
   savedSelfies?: { references: Reference[]; wearsGlasses: boolean; savedAt: number };
 };
 export interface StudioService {
@@ -103,7 +104,7 @@ export interface StudioService {
   assertPhotos?(shootId: string, photos: Photo[]): Promise<void>;
   deleteAllPhotos?(): Promise<void>;
   recoverGalleries?(email: string): Promise<number>;
-  refreshGalleries?(): Promise<void>;
+  refreshGalleries?(options?: { background?: boolean }): Promise<boolean | void>;
   retryPhoto?(shootId: string, slotId: string): Promise<void>;
   setFavorite(
     shootId: string,

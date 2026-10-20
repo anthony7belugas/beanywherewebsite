@@ -1,5 +1,12 @@
 import type { Photo, Shoot } from "./types";
 
+export function galleryRefreshMessage(error: unknown) {
+  const code = error && typeof error === "object" && "code" in error ? String(error.code) : "";
+  return /^(?:functions\/)?resource-exhausted$/.test(code)
+    ? "Photo lookup is temporarily limited. Please try again later. Your purchases are safe."
+    : "Couldn’t refresh your photos. Check your connection and try again.";
+}
+
 export function photoRetryState(shoot: Shoot, photo: Photo, now: number) {
   const automatic = shoot.automaticWorkPending ||
     ["queued", "running", "retry-waiting", "recovery-owned", "stalled"].includes(shoot.generationState || "");

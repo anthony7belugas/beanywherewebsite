@@ -5,7 +5,7 @@ import type { Pack, Shoot, StudioState } from "../../src/lib/types";
 const packs: Pack[] = JSON.parse(readFileSync(new URL("../../src/lib/catalog.json", import.meta.url), "utf8"));
 const pack = packs.find(value => value.packId === "paris")!;
 
-async function galleryFixture(page: Page, options: { deadline?: number; failPreview?: boolean; route?: string } = {}) {
+async function galleryFixture(page: Page, options: { deadline?: number; failPreview?: boolean; route?: string; missing?: boolean } = {}) {
   const shoot: Shoot = {
     id: "experience-test", packId: "paris", styling: "m", styleId: "tailored",
     createdAt: Date.now(), checkoutKey: "fixture", operationIds: [], sample: false,
@@ -25,11 +25,27 @@ async function galleryFixture(page: Page, options: { deadline?: number; failPrev
     body: `
       export const liveMode = true;
       const state = ${JSON.stringify(state)};
+      if (${!!options.missing}) {
+        state.shoots[0].photos[11].status = 'pending';
+        state.shoots[0].photos[11].readyAt = Infinity;
+        delete state.shoots[0].photos[11].path;
+        state.shoots[0].generationState = 'running';
+      }
       const listeners = new Set();
       const attempts = new Map();
       window.photoRequests = [];
       window.replaceFixturePhoto = () => {
         state.shoots[0].photos[0].path = 'photo-0-replaced';
+        for (const listener of listeners) listener();
+      };
+      window.finishFixturePhoto = () => {
+        Object.assign(state.shoots[0].photos[11], { status: 'done', readyAt: 0, path: 'photo-11' });
+        state.shoots[0].generationState = 'finished';
+        for (const listener of listeners) listener();
+      };
+      window.removeFixturePhoto = () => {
+        state.shoots[0].photos[0].readyAt = Infinity;
+        delete state.shoots[0].photos[0].path;
         for (const listener of listeners) listener();
       };
       export const service = {
@@ -77,6 +93,39 @@ test("save dialog keeps keyboard focus across gallery refreshes and respects an 
   await expect(page.getByRole("dialog", { name: "Create a new take?" })).toBeVisible();
   await page.getByRole("button", { name: "Keep this photo", exact: true }).click();
   await expect(page.getByRole("button", { name: "Reshoot s0", exact: true })).toBeFocused();
+});
+
+test("an unrelated arriving photo keeps the prepared selection and save dialog open", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "canShare", { value: () => true });
+    Object.defineProperty(navigator, "share", { value: async (data: ShareData) => {
+      Reflect.set(window, "sharedFiles", data.files?.map(file => file.name));
+    } });
+  });
+  await galleryFixture(page, { missing: true });
+  await page.getByRole("checkbox", { name: "Select s0", exact: true }).check();
+  await page.getByRole("button", { name: "Save selected", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Save your photos" });
+  await expect(dialog).toBeVisible();
+  await page.evaluate(() => Reflect.get(window, "finishFixturePhoto")());
+  await expect(page.locator(".gallery-toolbar")).toContainText("12 of 12");
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText("Your photo is ready.");
+  await dialog.getByRole("button", { name: "Save or share photos", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => Reflect.get(window, "sharedFiles"))).toEqual(["Paris-s0.webp"]);
+});
+
+for (const change of ["replaceFixturePhoto", "removeFixturePhoto"]) test(`a selected photo change still discards stale prepared files (${change})`, async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "canShare", { value: () => true });
+    Object.defineProperty(navigator, "share", { value: async () => {} });
+  });
+  await galleryFixture(page);
+  await page.getByRole("checkbox", { name: "Select s0", exact: true }).check();
+  await page.getByRole("button", { name: "Save selected", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Save your photos" })).toBeVisible();
+  await page.evaluate(change => Reflect.get(window, change)(), change);
+  await expect(page.getByRole("dialog", { name: "Save your photos" })).toHaveCount(0);
 });
 
 test("recovering a preview in the viewer repairs its thumbnail without reusing it for a replacement", async ({ page }) => {

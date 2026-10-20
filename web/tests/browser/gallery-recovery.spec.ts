@@ -5,10 +5,10 @@ import type { Pack } from "../../src/lib/types";
 const packs: Pack[] = JSON.parse(readFileSync(new URL("../../src/lib/catalog.json", import.meta.url), "utf8"));
 const pack = packs.find(value => value.packId === "paris")!;
 
-async function recoveredGallery(page: Page, emailState = "sent", missing = false) {
+async function recoveredGallery(page: Page, emailState = "sent", missing = false, options: { owner?: boolean; limited?: boolean } = {}) {
   const uid = `w_${"a".repeat(40)}`, owner = `w_${"b".repeat(40)}`;
   const job = {
-    id: "recovery-test", uid: owner, packId: "paris", styling: "m", styleId: "tailored",
+    id: "recovery-test", uid: options.owner ? uid : owner, packId: "paris", styling: "m", styleId: "tailored",
     clientVisible: true, status: "done", generationState: "finished", reshootsLeft: 3,
     retryWindowEndsAtMs: Date.now() + 86400000, emailRequestState: emailState,
     deliveryEmail: "photos@example.com", manualRetriesPerSlot: 1,
@@ -26,7 +26,8 @@ async function recoveredGallery(page: Page, emailState = "sent", missing = false
       import { LiveStudioService } from '/src/services/live.ts';
       export const liveMode = true;
       const job = ${JSON.stringify(job)};
-      let connection = 'ready';
+      let connection = ${JSON.stringify(options.limited ? "limited" : "ready")};
+      window.galleryReads = 0;
       window.setGalleryConnection = value => { connection = value; };
       window.setDeliveryState = value => { job.emailRequestState = value; };
       window.setDeliveryFeedback = value => { job.emailDeliveryFeedback = value; };
@@ -45,10 +46,13 @@ async function recoveredGallery(page: Page, emailState = "sent", missing = false
 
       const api = {
         session: { uid: ${JSON.stringify(uid)}, webAppId: 'isolated-qa', capabilityVersion: 1 },
-        listJobs: async () => [], watchJobs: async () => () => {}, recordEvent: async () => {},
+        listJobs: async () => ${!!options.owner} ? [structuredClone(job)] : [],
+        watchJobs: async () => () => {}, recordEvent: async () => {},
         listWebGalleries: async () => {
+          window.galleryReads++;
           if (connection === 'offline') throw Object.assign(Error('Connection lost'), { code: 'functions/unavailable' });
           if (connection === 'denied') throw Object.assign(Error('Access denied'), { code: 'functions/permission-denied' });
+          if (connection === 'limited') throw Object.assign(Error('Too many attempts'), { code: 'functions/resource-exhausted' });
           return { email: 'qa@example.com', jobs: connection === 'removed' ? [] : [structuredClone(job)], nextCursor: null };
         },
         galleryPhoto: async (_, path) => {
@@ -66,12 +70,40 @@ async function recoveredGallery(page: Page, emailState = "sent", missing = false
           slot.manualAttempts = 1;
         },
       };
+      api.download = api.galleryPhoto;
+      api.assertPhotos = api.assertGalleryPhotos;
       export const service = new LiveStudioService(async () => api, 'gallery-recovery-' + crypto.randomUUID());
     `,
   }));
   await page.goto("/#/gallery/recovery-test");
   await expect(page.getByRole("heading", { name: "Paris, with you." })).toBeVisible();
 }
+
+test("a rate-limited recovery lookup leaves owned photos open and can be retried without reloading", async ({ page }) => {
+  await page.clock.install({ time: new Date("2026-10-20T10:00:00Z") });
+  await recoveredGallery(page, "sent", false, { owner: true, limited: true });
+  const warning = page.getByRole("status").filter({ hasText: "Photo lookup is temporarily limited" });
+  await expect(warning).toBeVisible();
+  await expect(page.locator(".section-heading button")).toBeEnabled();
+  await expect(page.getByRole("heading", { name: "Your photos need to reconnect." })).toHaveCount(0);
+  await page.clock.runFor(31000);
+  expect(await page.evaluate(() => Reflect.get(window, "galleryReads"))).toBe(1);
+  await page.evaluate(() => Reflect.get(window, "setGalleryConnection")("ready"));
+  await warning.getByRole("button", { name: "Retry connection", exact: true }).click();
+  await expect(warning).toHaveCount(0);
+  await expect(page.locator(".gallery-toolbar")).toContainText("12 of 12");
+});
+
+test("settled galleries skip rapid polls but still refresh email feedback periodically", async ({ page }) => {
+  await page.clock.install();
+  await recoveredGallery(page);
+  await page.clock.runFor(31000);
+  expect(await page.evaluate(() => Reflect.get(window, "galleryReads"))).toBe(1);
+  await page.evaluate(() => Reflect.get(window, "setDeliveryFeedback")("bounced"));
+  await page.clock.fastForward(300000);
+  await expect(page.getByRole("status", { name: "Email delivery update" })).toContainText("We couldn’t deliver your email.");
+  expect(await page.evaluate(() => Reflect.get(window, "galleryReads"))).toBe(2);
+});
 
 test("a dropped connection keeps the recovered gallery and selection, and Retry reconnects in place", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });

@@ -3,7 +3,7 @@ import { currentAttribution, type Acquisition } from "../../storefront/acquisiti
 import { LocalStudioService } from "./local";
 import { packById } from "../lib/catalog";
 import { validateDraft } from "../lib/domain";
-import { photoRetryState } from "../lib/gallery-state";
+import { galleryRefreshMessage, photoRetryState } from "../lib/gallery-state";
 import type { CheckoutReview, Draft, DraftGuard, DraftUpdate, Photo, Shoot, StudioService, Styling } from "../lib/types";
 import type { createFirebaseAdapter, NativeJobProjection, ReshootOperation, WebCheckout, GalleryPage } from "../../integration/firebase-adapter";
 
@@ -76,7 +76,12 @@ export class LiveStudioService implements StudioService {
   private recoveredJobs: (NativeJobProjection & { id: string })[] = [];
   private recoveryEmail = "";
   private recoveryEpoch = 0;
-  private galleryRefresh?: Promise<void>;
+  private galleryRefresh?: Promise<boolean>;
+  private galleryRefreshError = "";
+  private galleryKnown = false;
+  private nextGalleryRefreshAt = 0;
+  private gallerySnapshot = "";
+  private galleryChangedAt = 0;
   private settlingGalleries?: Promise<void>;
   private allJobs() {
     return [...new Map([...this.recoveredJobs, ...this.jobs].map(job => [job.id, job])).values()]
@@ -110,7 +115,9 @@ export class LiveStudioService implements StudioService {
       this.favorites = (await (await this.database()).get("favorites", api.session.uid)) || {};
       // Initial server read lets permission/index failures reach the UI rather than an empty gallery.
       this.jobs = await api.listJobs();
-      await this.refreshGalleries();
+      // Email recovery is independent of this browser's owned galleries and checkout.
+      // Keep its failure visible without blocking the owner listener or the whole studio.
+      await this.refreshGalleries().catch(() => {});
       await api.watchJobs(jobs => { this.jobs = jobs; this.watchError = null; this.changed(); },
         error => { this.jobs = []; this.watchError = error; this.changed(); });
     })().catch(error => { this.watching = undefined; throw error; });
@@ -124,7 +131,8 @@ export class LiveStudioService implements StudioService {
     const api = await this.api();
     this.favorites = (await (await this.database()).get("favorites", api.session.uid)) || {};
     const attempts = await (await this.database()).getAll("attempts") as Attempt[];
-    return { ...state, recoveryEmail: this.recoveryEmail, shoots: this.allJobs().filter(job => !!packById(job.packId))
+    return { ...state, recoveryEmail: this.recoveryEmail, galleryRefreshError: this.galleryRefreshError,
+      shoots: this.allJobs().filter(job => !!packById(job.packId))
       .map(job => {
         const shoot = projectWebJob(job, this.favorites);
         shoot.deliveryEmail ||= attempts.find(attempt => attempt.uid === api.session.uid && attempt.orderId === job.orderId)?.email;
@@ -164,29 +172,59 @@ export class LiveStudioService implements StudioService {
   }
   async recoverGalleries(email: string) {
     const epoch = ++this.recoveryEpoch;
+    this.galleryKnown = false; this.nextGalleryRefreshAt = 0;
     this.recoveredJobs = []; this.recoveryEmail = ""; this.changed();
     const result = await this.galleryPages(await (await this.api()).recoverGalleries(email.trim()));
     if (epoch !== this.recoveryEpoch) throw new Error("Your gallery search changed. Try again.");
-    this.recoveredJobs = result.jobs; this.recoveryEmail = result.email; this.changed();
+    this.rememberGalleries(result); this.changed();
     this.track("library_viewed", { count: result.jobs.length, restored: true });
     return result.jobs.length;
   }
-  refreshGalleries() {
+  private rememberGalleries(result: { email: string; jobs: (NativeJobProjection & { id: string })[] }) {
+    const now = Date.now();
+    const snapshot = JSON.stringify(result);
+    if (snapshot !== this.gallerySnapshot) this.galleryChangedAt = now;
+    this.gallerySnapshot = snapshot;
+    this.recoveredJobs = result.jobs; this.recoveryEmail = result.email;
+    this.galleryKnown = true; this.galleryRefreshError = "";
+    // Owned shoots already have a realtime listener. Poll recovered shoots quickly only
+    // while work is progressing; an unchanged/stalled job must not poll all day.
+    const owned = new Set(this.jobs.map(job => job.id));
+    const active = result.jobs.some(job => !owned.has(job.id)
+      && !["failed", "refunded"].includes(job.status)
+      && (job.status === "developing" || job.automaticWorkPending || job.recovering
+        || job.generationClaimId || job.recoveryClaimId
+        || ["queued", "running", "retry-waiting", "recovery-owned", "stalled"].includes(job.generationState || "")
+        || job.slots.some(slot => slot.hasActiveClaim || slot.claimId || slot.reshooting || slot.retrying)
+        || ["waiting", "queued", "sending", "pending"].includes(job.emailRequestState || "")));
+    this.nextGalleryRefreshAt = now + (active && now - this.galleryChangedAt < 300000 ? 15000 : 300000);
+  }
+  refreshGalleries(options: { background?: boolean } = {}) {
     if (this.galleryRefresh) return this.galleryRefresh;
+    if (options.background && (Date.now() < this.nextGalleryRefreshAt
+        || (this.galleryKnown && !this.recoveryEmail && !this.galleryRefreshError))) return Promise.resolve(false);
     const epoch = this.recoveryEpoch;
     return this.galleryRefresh = (async () => {
       const api = await this.api();
       // Optional for legacy adapters; the deployed web adapter always provides this.
-      if (!api.listWebGalleries) return;
+      if (!api.listWebGalleries) return false;
       const result = await this.galleryPages(await api.listWebGalleries());
-      if (epoch !== this.recoveryEpoch) return;
-      this.recoveredJobs = result.jobs; this.recoveryEmail = result.email;
+      if (epoch !== this.recoveryEpoch) return false;
+      this.rememberGalleries(result);
+      return true;
     })().catch(error => {
       // A failed connection is not a revoked gallery. Keep the last successful
       // result in place; downloads and reshoots still verify current access.
       const accessDenied = /^(?:functions\/)?(?:permission-denied|unauthenticated)$/.test(error?.code || "");
       if (accessDenied && epoch === this.recoveryEpoch && this.recoveredJobs.length) {
         this.recoveredJobs = []; this.changed();
+      }
+      if (epoch === this.recoveryEpoch) {
+        this.galleryRefreshError = galleryRefreshMessage(error);
+        const now = Date.now();
+        // This quota resets at UTC midnight. An automatic loop cannot fix it.
+        this.nextGalleryRefreshAt = /^(?:functions\/)?resource-exhausted$/.test(error?.code || "")
+          ? (Math.floor(now / 86400000) + 1) * 86400000 + 1000 : now + 60000;
       }
       throw error;
     }).finally(() => { this.galleryRefresh = undefined; });

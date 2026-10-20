@@ -371,7 +371,8 @@ it.each([undefined, "functions/unavailable", "functions/deadline-exceeded", "fun
     const before = await service.read();
     api.listWebGalleries.mockRejectedValueOnce(Object.assign(new Error("Connection lost"), { code }));
     await expect(service.refreshGalleries()).rejects.toThrow("Connection lost");
-    expect(await service.read()).toEqual(before);
+    expect(await service.read()).toEqual({ ...before,
+      galleryRefreshError: "Couldn’t refresh your photos. Check your connection and try again." });
     api.listWebGalleries.mockResolvedValue({ email: "buyer@example.com", jobs: [{ ...job(), reshootsLeft: 2 }], nextCursor: null });
     await service.refreshGalleries();
     expect((await service.read()).shoots[0].reshootsLeft).toBe(2);
@@ -403,6 +404,113 @@ it("a stale access failure cannot clear a newer email search", async () => {
   const state = await service.read();
   expect(state.recoveryEmail).toBe("new@example.com");
   expect(state.shoots.map(shoot => shoot.id)).toEqual(["new"]);
+  expect(state.galleryRefreshError).toBe("");
+});
+
+it.each(["functions/resource-exhausted", "functions/unavailable"])(
+  "an initial recovery failure leaves owned photos, live updates and checkout usable (%s)", async code => {
+    api.listWebGalleries = vi.fn().mockRejectedValue(Object.assign(new Error("lookup failed"), { code }));
+    const state = await service.read();
+    expect(state.shoots.map(shoot => shoot.id)).toEqual(["job_1"]);
+    expect(state.galleryRefreshError).toContain(code.endsWith("resource-exhausted") ? "temporarily limited" : "Couldn’t refresh");
+    expect(api.watchJobs).toHaveBeenCalledOnce();
+    api.watchJobs.mock.calls[0][0]([{ ...job(), reshootsLeft: 2 }]);
+    expect((await service.read()).shoots[0].reshootsLeft).toBe(2);
+    await service.photoBlob("job_1", state.shoots[0].photos[0]);
+    expect(api.download).toHaveBeenCalled();
+    expect(await service.checkout(draft, "buyer@example.com")).toMatchObject({ state: "open" });
+  },
+);
+
+it("an unavailable recovered library shows a recoverable warning even without owned shoots", async () => {
+  api.listJobs.mockResolvedValue([]);
+  api.listWebGalleries = vi.fn().mockRejectedValue(Object.assign(new Error("limited"), { code: "functions/resource-exhausted" }));
+  expect(await service.read()).toMatchObject({ shoots: [], galleryRefreshError: expect.stringContaining("temporarily limited") });
+  api.recoverGalleries = vi.fn().mockResolvedValue({ email: "buyer@example.com", jobs: [job()], nextCursor: null });
+  await service.recoverGalleries("buyer@example.com");
+  expect(await service.read()).toMatchObject({ galleryRefreshError: "", shoots: [expect.objectContaining({ id: "job_1" })] });
+});
+
+it("owned galleries use their listener without repeatedly querying an unused email recovery session", async () => {
+  const clock = vi.spyOn(Date, "now");
+  try {
+    clock.mockReturnValue(1000000);
+    api.listWebGalleries = vi.fn().mockResolvedValue({ email: "", jobs: [], nextCursor: null });
+    await service.read();
+    clock.mockReturnValue(1000000 + 86400000);
+    expect(await service.refreshGalleries({ background: true })).toBe(false);
+    expect(api.listWebGalleries).toHaveBeenCalledOnce();
+    await service.refreshGalleries(); // Returning focus or a deliberate retry still checks the server.
+    expect(api.listWebGalleries).toHaveBeenCalledTimes(2);
+  } finally { clock.mockRestore(); }
+});
+
+it("a settled recovered gallery stays far below the daily read allowance across a full day", async () => {
+  const clock = vi.spyOn(Date, "now");
+  try {
+    let time = 1000000;
+    clock.mockImplementation(() => time);
+    api.listJobs.mockResolvedValue([]);
+    api.listWebGalleries = vi.fn().mockResolvedValue({ email: "buyer@example.com",
+      jobs: [{ ...job(), generationState: "finished", emailRequestState: "sent" }], nextCursor: null });
+    await service.read();
+    for (let elapsed = 15000; elapsed <= 86400000; elapsed += 15000) {
+      time = 1000000 + elapsed;
+      await service.refreshGalleries({ background: true });
+    }
+    expect(api.listWebGalleries.mock.calls.length).toBeLessThan(300);
+    expect((await service.read()).shoots).toHaveLength(1);
+  } finally { clock.mockRestore(); }
+});
+
+it("recovered work refreshes promptly but backs off if it stops changing", async () => {
+  const clock = vi.spyOn(Date, "now");
+  try {
+    let time = 1000000;
+    clock.mockImplementation(() => time);
+    api.listJobs.mockResolvedValue([]);
+    api.listWebGalleries = vi.fn().mockResolvedValue({ email: "buyer@example.com", jobs: [job()], nextCursor: null });
+    await service.read();
+    time += 15000;
+    expect(await service.refreshGalleries({ background: true })).toBe(true);
+    for (let elapsed = 30000; elapsed <= 3600000; elapsed += 15000) {
+      time = 1000000 + elapsed;
+      await service.refreshGalleries({ background: true });
+    }
+    expect(api.listWebGalleries.mock.calls.length).toBeLessThan(35);
+    // A new operation/progress read restores frequent updates.
+    api.listWebGalleries.mockResolvedValue({ email: "buyer@example.com", jobs: [{ ...job(), reshootsLeft: 2 }], nextCursor: null });
+    await service.refreshGalleries();
+    time += 15000;
+    expect(await service.refreshGalleries({ background: true })).toBe(true);
+  } finally { clock.mockRestore(); }
+});
+
+it("quota exhaustion stops automatic requests until the daily reset while explicit recovery can clear it", async () => {
+  const clock = vi.spyOn(Date, "now");
+  try {
+    let time = Date.UTC(2026, 9, 20, 10);
+    clock.mockImplementation(() => time);
+    api.listWebGalleries = vi.fn().mockRejectedValue(Object.assign(new Error("limited"), { code: "resource-exhausted" }));
+    await service.read();
+    time += 12 * 3600000;
+    expect(await service.refreshGalleries({ background: true })).toBe(false);
+    expect(api.listWebGalleries).toHaveBeenCalledOnce();
+    time = Date.UTC(2026, 9, 21, 0, 0, 2);
+    api.listWebGalleries.mockResolvedValue({ email: "buyer@example.com", jobs: [], nextCursor: null });
+    expect(await service.refreshGalleries({ background: true })).toBe(true);
+    expect((await service.read()).galleryRefreshError).toBe("");
+  } finally { clock.mockRestore(); }
+});
+
+it("an interrupted email search remains eligible for automatic recovery", async () => {
+  api.listWebGalleries = vi.fn().mockResolvedValue({ email: "", jobs: [], nextCursor: null });
+  await service.read();
+  api.recoverGalleries = vi.fn().mockRejectedValue(new Error("lost response"));
+  await expect(service.recoverGalleries("buyer@example.com")).rejects.toThrow("lost response");
+  api.listWebGalleries.mockResolvedValue({ email: "buyer@example.com", jobs: [job()], nextCursor: null });
+  expect(await service.refreshGalleries({ background: true })).toBe(true);
+  expect((await service.read()).recoveryEmail).toBe("buyer@example.com");
 });
 
 it("reads all recovery pages and deduplicates galleries already owned by this browser", async () => {

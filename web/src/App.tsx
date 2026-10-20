@@ -36,7 +36,7 @@ import {
 import { storefrontEntry, withoutStorefrontEntry } from "./lib/storefront-entry";
 import { InvalidStoredStateError } from "./lib/stored-state";
 import { emptyState, validateDraft } from "./lib/domain";
-import { galleryState, photoRetryState } from "./lib/gallery-state";
+import { galleryRefreshMessage, galleryState, photoRetryState } from "./lib/gallery-state";
 import { suggestedEmail } from "./lib/email";
 import { prepareReference, preparePhotoDownload, canSharePhotos, type PreparedPhotos } from "./lib/media";
 import type {
@@ -132,6 +132,7 @@ export default function App() {
         .then((s) => {
           if (alive) {
             setState(s);
+            setGalleryError(s.galleryRefreshError || "");
             setLoaded(true);
             setFatal("");
             setRecoverable(false);
@@ -173,19 +174,19 @@ export default function App() {
     if (!liveMode || !loaded || !(path === "/library" || path.startsWith("/gallery/"))) return;
     setGalleryRefreshing(false);
     let alive = true, running = false;
-    const refresh = async () => {
+    const refresh = async (background = false) => {
       if (running || document.hidden) return;
       running = true;
       setGalleryRefreshing(true);
       try {
-        await service.refreshGalleries?.();
+        if (await service.refreshGalleries?.({ background }) === false) return;
         const next = await service.read();
-        if (alive) { setState(next); setGalleryError(""); }
-      } catch { if (alive) setGalleryError("Couldn’t refresh your photos. Check your connection and try again."); }
+        if (alive) { setState(next); setGalleryError(next.galleryRefreshError || ""); }
+      } catch (error) { if (alive) setGalleryError(galleryRefreshMessage(error)); }
       finally { running = false; if (alive) setGalleryRefreshing(false); }
     };
     if (galleryRetry) void refresh();
-    const timer = setInterval(() => void refresh(), 15000);
+    const timer = setInterval(() => void refresh(true), 15000);
     const focus = () => void refresh();
     window.addEventListener("focus", focus);
     return () => { alive = false; clearInterval(timer); window.removeEventListener("focus", focus); };
@@ -1388,7 +1389,7 @@ function Gallery({
   const [reshootPending, setReshootPending] = useState(false);
   const [reshootConfirmation, setReshootConfirmation] = useState<{ shootId: string; photo: Photo } | null>(null);
   const reshootRequest = useRef(false);
-  const [preparedPhotos, setPreparedPhotos] = useState<PreparedPhotos | null>(null);
+  const [preparedPhotos, setPreparedPhotos] = useState<(PreparedPhotos & { sources: Photo[] }) | null>(null);
   const [shareError, setShareError] = useState("");
   const [sharing, setSharing] = useState(false);
   const failedPreviews = useRef(new Set<string>());
@@ -1405,8 +1406,15 @@ function Gallery({
     }
   }, []);
   const shareAvailable = canSharePhotos();
-  const photoVersions = shoot.photos.map(p => `${p.slotId}:${p.path}:${p.revision}:${p.readyAt}`).join("|");
-  useEffect(() => { setPreparedPhotos(null); }, [photoVersions]);
+  useEffect(() => {
+    // Only invalidate bytes for photos in this save operation. Other photos can
+    // finish or be reshot without dismissing a customer's prepared download.
+    if (preparedPhotos?.sources.some(source => !photos.some(photo =>
+      photo.slotId === source.slotId && photo.path === source.path &&
+      photo.revision === source.revision && photo.url === source.url && photo.readyAt <= now))) {
+      setPreparedPhotos(null);
+    }
+  }, [photos, now, preparedPhotos]);
   const visibleReady = photos.filter((p) => p.readyAt <= now);
   const visibleSelected = selected.filter((id) =>
     photos.some((p) => p.slotId === id),
@@ -1492,7 +1500,8 @@ function Gallery({
         },
       });
       if (canSharePhotos(prepared.files)) {
-        setLightbox(null); setShareError(""); setPreparedPhotos(prepared);
+        setLightbox(null); setShareError("");
+        setPreparedPhotos({ ...prepared, sources: list.map(photo => ({ ...photo })) });
       } else {
         prepared.download();
         notify(shoot.sample ? "Sample download prepared." : "Your download is ready.");
