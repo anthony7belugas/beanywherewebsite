@@ -7,7 +7,7 @@ export function safePage(href:string):string;
 export function nextIdentity(previous:unknown,input:{now:number;uuid:()=>string;attribution:Acquisition}):any;
 export function analyticsPreference():boolean|null;
 export function analyticsAllowed():boolean;
-export function analyticsContext():AnalyticsContext;
+export function analyticsContext(options?:{active?:boolean}):AnalyticsContext;
 export function trackWeb(name:string,params?:Record<string,unknown>,eventId?:string):void;
 export function setAnalyticsAllowed(enabled:boolean):void;
 export function onAnalyticsPreference(fn:(enabled:boolean)=>void|Promise<void>):void;

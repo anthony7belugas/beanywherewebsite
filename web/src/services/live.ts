@@ -113,7 +113,7 @@ export class LiveStudioService implements StudioService {
               const result=await api.setAnalyticsPreference(desired,profile.preferenceRevisions.analytics);
               if(!result.applied && result.analytics!==desired)throw new Error('Preference changed; retry.');
             }
-            const context=analyticsContext();
+            const context=analyticsContext({active:false});
             if(context.enabled && context.sessionId!==observedSession){
               const observed=await api.recordWebObservation({kind:"session",eventId:crypto.randomUUID(),context});
               if(observed.disposition==='accepted'||observed.disposition==='duplicate')observedSession=context.sessionId || '';
@@ -126,6 +126,7 @@ export class LiveStudioService implements StudioService {
         onAnalyticsPreference(()=>void sync());
         window.addEventListener('online',()=>void sync());
         window.addEventListener('beanywhere-analytics-choice',()=>void sync());
+        window.addEventListener('beanywhere-analytics-session',()=>void sync());
         void sync();
       }
       return api;

@@ -187,3 +187,121 @@ test("visible-page timing stays separate from Google's automatic engagement cloc
   expect(ticks.some(row => (row[2] as { duration_ms: number }).duration_ms >= 29000)).toBe(true);
   for (const row of ticks) expect(row[2]).not.toHaveProperty("engagement_time_msec");
 });
+
+async function visibility(page: Page, value: "visible" | "hidden") {
+  await page.evaluate(value => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, value });
+    document.dispatchEvent(new Event("visibilitychange"));
+  }, value);
+}
+const pageViews = async (page: Page) => (await records(page))
+  .filter(row => row[0] === "event" && row[1] === "page_view")
+  .map(row => row[2] as Record<string, string | number>);
+
+test("returning to an inactive tab records a new session with the same browser and no new campaign click", async ({ page }) => {
+  await page.clock.install();
+  await setup(page);
+  await page.goto("/?utm_source=google&utm_medium=cpc&utm_campaign=return_test");
+  await expect.poll(async () => (await pageViews(page)).length).toBe(1);
+  const first = await page.evaluate(() => JSON.parse(localStorage.getItem("beanywhere-measurement-v1")!));
+  await visibility(page, "hidden");
+  await page.clock.runFor(31 * 60000);
+  await visibility(page, "visible");
+  await expect.poll(async () => (await pageViews(page)).length, {
+    message: JSON.stringify(await page.evaluate(() => ({
+      now: Date.now(), state: JSON.parse(localStorage.getItem("beanywhere-measurement-v1")!),
+      events: ((window as unknown as { dataLayer: IArguments[] }).dataLayer || []).filter(row => row[0] === "event").map(row => [row[1], row[2]]),
+    }))),
+  }).toBe(2);
+  const second = await page.evaluate(() => JSON.parse(localStorage.getItem("beanywhere-measurement-v1")!));
+  expect(second.clientId).toBe(first.clientId);
+  expect(second.sessionId).not.toBe(first.sessionId);
+  expect(second.visitNumber).toBe(2);
+  expect((await pageViews(page))[1]).toMatchObject({
+    session_source: "direct", first_source: "google", source: "google",
+  });
+  await visibility(page, "hidden");
+  await page.clock.runFor(60000);
+  await visibility(page, "visible");
+  expect(await pageViews(page)).toHaveLength(2);
+});
+
+test("a browser cache restore records a page view and restarts the visible timer without counting time away", async ({ page }) => {
+  await page.clock.install();
+  await setup(page);
+  await page.goto("/");
+  await expect.poll(async () => (await pageViews(page)).length).toBe(1);
+  const first = (await pageViews(page))[0];
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true })));
+  await visibility(page, "hidden");
+  await page.clock.runFor(120000);
+  await visibility(page, "visible");
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })));
+  expect(await pageViews(page)).toHaveLength(2);
+  expect((await pageViews(page))[1].session_id).toBe(first.session_id);
+  await page.clock.runFor(30000);
+  const ticks = (await records(page)).filter(row => row[0] === "event" && row[1] === "engagement_tick");
+  expect(ticks.some(row => (row[2] as { duration_ms: number }).duration_ms >= 29000)).toBe(true);
+  expect(ticks.every(row => (row[2] as { duration_ms: number }).duration_ms <= 30000)).toBe(true);
+});
+
+test("scroll depth can be measured again on a newly measured page after opting back in", async ({ page }) => {
+  await setup(page);
+  await page.goto("/");
+  await expect.poll(async () => (await pageViews(page)).length).toBe(1);
+  const scroll = () => page.evaluate(() => {
+    Object.defineProperty(window, "scrollY", {
+      configurable: true, value: document.documentElement.scrollHeight - innerHeight,
+    });
+    window.dispatchEvent(new Event("scroll"));
+  });
+  await scroll();
+  const count = async () => (await records(page)).filter(row => row[0] === "event" && row[1] === "scroll_depth").length;
+  expect(await count()).toBe(4);
+  await page.getByRole("button", { name: "Usage settings" }).click();
+  await page.getByRole("checkbox", { name: "Share website usage data" }).uncheck();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await scroll();
+  expect(await count()).toBe(4);
+  await page.getByRole("button", { name: "Usage settings" }).click();
+  await page.getByRole("checkbox", { name: "Share website usage data" }).check();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await scroll();
+  expect(await count()).toBe(8);
+});
+
+test("a fresh external return keeps the browser but records the new session's source", async ({ page }) => {
+  await page.clock.install();
+  await setup(page);
+  await page.goto("/?utm_source=google&utm_medium=cpc");
+  await expect.poll(async () => (await pageViews(page)).length).toBe(1);
+  const first = await page.evaluate(() => JSON.parse(localStorage.getItem("beanywhere-measurement-v1")!));
+  await visibility(page, "hidden");
+  await page.clock.runFor(31 * 60000);
+  await page.goto("/?utm_source=instagram&utm_medium=social");
+  await expect.poll(async () => (await pageViews(page)).length).toBe(1);
+  const returned = await page.evaluate(() => JSON.parse(localStorage.getItem("beanywhere-measurement-v1")!));
+  expect(returned.clientId).toBe(first.clientId);
+  expect(returned.sessionId).not.toBe(first.sessionId);
+  expect((await pageViews(page))[0]).toMatchObject({ session_source: "instagram", first_source: "google", source: "instagram" });
+});
+
+test("two tabs share a browser and session and apply withdrawal across both tabs", async ({ page, context }) => {
+  await setup(page);
+  await page.goto("/");
+  await expect.poll(async () => (await pageViews(page)).length).toBe(1);
+  const other = await context.newPage();
+  await setup(other);
+  await other.goto("/shoots/paris/");
+  await expect.poll(async () => (await pageViews(other)).length).toBe(1);
+  const config = async (p: Page) => (await records(p)).find(row => row[0] === "config")?.[2] as Record<string, unknown>;
+  expect((await config(other)).client_id).toBe((await config(page)).client_id);
+  expect((await pageViews(other))[0].session_id).toBe((await pageViews(page))[0].session_id);
+  await other.getByRole("button", { name: "Usage settings" }).click();
+  await other.getByRole("checkbox", { name: "Share website usage data" }).uncheck();
+  await other.getByRole("button", { name: "Save", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as Record<string, unknown>)["ga-disable-G-2VT9EWH1B5"])).toBe(true);
+  const count = (await records(page)).filter(row => row[0] === "event").length;
+  await page.getByRole("button", { name: "Men’s styling", exact: true }).click();
+  expect((await records(page)).filter(row => row[0] === "event")).toHaveLength(count);
+});
