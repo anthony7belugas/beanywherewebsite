@@ -3,6 +3,7 @@ import { currentAttribution, type Acquisition } from "../../storefront/acquisiti
 import { LocalStudioService } from "./local";
 import { packById } from "../lib/catalog";
 import { validateDraft } from "../lib/domain";
+import { photoRetryState } from "../lib/gallery-state";
 import type { CheckoutReview, Draft, DraftGuard, DraftUpdate, Photo, Shoot, StudioService, Styling } from "../lib/types";
 import type { createFirebaseAdapter, NativeJobProjection, ReshootOperation, WebCheckout, GalleryPage } from "../../integration/firebase-adapter";
 
@@ -27,11 +28,18 @@ export function projectWebJob(job: NativeJobProjection & { id: string }, favorit
     retryWindowEndsAtMs: job.retryWindowEndsAtMs,
     deliveryClosed: job.deliveryClosed === true || !!job.deliveryClosedAt,
     reshootsClosedReason: job.reshootsClosedReason, emailRequestState: job.emailRequestState,
+    emailDeliveryOutcomeUnknown: job.emailDeliveryOutcomeUnknown,
+    deliveryEmail: job.deliveryEmail || job.emailRequestTo,
+    manualRetriesPerSlot: job.manualRetriesPerSlot ?? 1,
+    retriesClosedReason: job.retriesClosedReason, generationLimitReached: job.generationLimitReached,
+    automaticWorkPending: job.automaticWorkPending || job.recovering || !!job.generationClaimId || !!job.recoveryClaimId,
     photos: (job.slots || []).map(slot => ({
       slotId: slot.slotId, sceneId: slot.sceneId, take: slot.take,
       label: pack?.scenes.find(scene => scene.sceneId === slot.sceneId)?.label || "Your photo",
       url: "", path: slot.path, status: slot.status,
       reshooting: slot.reshooting === true || (!!slot.claimId && typeof slot.prevPath === "string"),
+      retrying: slot.retrying === true || (!!slot.claimId && typeof slot.prevPath !== "string"),
+      hasActiveClaim: slot.hasActiveClaim || !!slot.claimId, manualAttempts: slot.manualAttempts || 0,
       favorite: favorites[`${job.id}/${slot.slotId}`] === true,
       revision: 0,
       // There is no simulated completion clock in a paid gallery.
@@ -77,6 +85,7 @@ export class LiveStudioService implements StudioService {
   private watching?: Promise<void>;
   private checkoutInFlight?: Promise<ReturnType<typeof result>>;
   private checkoutAbort?: AbortController;
+  private retries = new Map<string, Promise<void>>();
   private local: LocalStudioService;
   constructor(private connect: () => Promise<API>, private namespace = "beanywhere-web-live-v1") {
     this.local = new LocalStudioService(`${namespace}-drafts`);
@@ -112,8 +121,13 @@ export class LiveStudioService implements StudioService {
     const state = await this.local.read();
     const api = await this.api();
     this.favorites = (await (await this.database()).get("favorites", api.session.uid)) || {};
+    const attempts = await (await this.database()).getAll("attempts") as Attempt[];
     return { ...state, recoveryEmail: this.recoveryEmail, shoots: this.allJobs().filter(job => !!packById(job.packId))
-      .map(job => projectWebJob(job, this.favorites)) };
+      .map(job => {
+        const shoot = projectWebJob(job, this.favorites);
+        shoot.deliveryEmail ||= attempts.find(attempt => attempt.uid === api.session.uid && attempt.orderId === job.orderId)?.email;
+        return shoot;
+      }) };
   }
   private settleGalleryPurchases() {
     return this.settlingGalleries ??= (async () => {
@@ -395,6 +409,32 @@ export class LiveStudioService implements StudioService {
     // A newer draft in another tab is already editable and must be preserved.
     await this.local.reopenCheckout(review, attempt?.email, true);
     if (attempt) await this.releaseAttempt(attempt);
+  }
+  retryPhoto(shootId: string, slotId: string): Promise<void> {
+    const key = `${shootId}/${slotId}`;
+    const pending = this.retries.get(key);
+    if (pending) return pending;
+    const retry = (async () => {
+      const api = await this.api();
+      const job = this.allJobs().find(value => value.id === shootId);
+      if (!job) throw new Error("This shoot is unavailable.");
+      const shoot = projectWebJob(job, this.favorites);
+      const photo = shoot.photos.find(value => value.slotId === slotId);
+      if (!photo || !photoRetryState(shoot, photo, Date.now()).available) {
+        throw new Error("This photo can’t be retried right now. Refresh your gallery.");
+      }
+      try { await api.retrySlot(shootId, slotId); }
+      finally {
+        // A lost response can still mean the server finished. Refresh both owned
+        // and email-recovered shoots before allowing another deliberate tap.
+        await Promise.allSettled([
+          api.listJobs().then(jobs => { this.jobs = jobs; }), this.refreshGalleries(),
+        ]);
+        this.changed();
+      }
+    })().finally(() => { this.retries.delete(key); });
+    this.retries.set(key, retry);
+    return retry;
   }
   async setFavorite(shootId: string, slotId: string, favorite: boolean) {
     const api = await this.api();

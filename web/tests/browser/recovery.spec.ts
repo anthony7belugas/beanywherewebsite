@@ -116,37 +116,21 @@ test("damaged saved data has a non-destructive recovery screen and a confirmed r
   await expect(page.locator(".pack-card")).toHaveCount(6);
 });
 
-test("Favorites downloads and viewer navigation include only the filtered photos", async ({
-  page,
-}) => {
+test("legacy favorites do not hide photos, and selecting one saves only that photo", async ({ page }) => {
   await useDownloads(page);
   const state = galleryState();
   state.shoots[0].photos[0].favorite = true;
   await seed(page, state, `/gallery/${state.shoots[0].id}`);
-  await page.getByRole("button", { name: /^Favorites/ }).click();
+  await expect(page.locator(".photo-tile")).toHaveCount(12);
+  await expect(page.getByRole("button", { name: /favorite/i })).toHaveCount(0);
+  await page.getByRole("checkbox", { name: "Select s0", exact: true }).check();
   const download = page.waitForEvent("download");
-  await page
-    .getByRole("button", { name: /Download/ })
-    .first()
-    .click();
+  await page.getByRole("button", { name: "Download selected", exact: true }).click();
   expect((await download).suggestedFilename()).toBe("Paris-sample-s0.webp");
-  await page
-    .getByRole("button", { name: /^Open .*take 1/ })
-    .first()
-    .click();
-  const current = await page
-    .getByRole("dialog")
-    .locator("img")
-    .getAttribute("src");
-  await page.getByRole("button", { name: "Next photo" }).click();
-  expect(
-    await page.getByRole("dialog").locator("img").getAttribute("src"),
-  ).toBe(current);
-  await page.getByRole("button", { name: "Toggle favorite photo" }).click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(
-    page.getByRole("button", { name: /Download/ }).first(),
-  ).toBeDisabled();
+  await page.getByRole("button", { name: /^Open .*take 1/ }).first().click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Next photo" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: /favorite/i })).toHaveCount(0);
 });
 
 test("a selected photo being reshot cannot accidentally download the rest of the shoot", async ({

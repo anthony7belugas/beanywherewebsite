@@ -1,9 +1,26 @@
-import type { Shoot } from "./types";
+import type { Photo, Shoot } from "./types";
+
+export function photoRetryState(shoot: Shoot, photo: Photo, now: number) {
+  const automatic = shoot.automaticWorkPending ||
+    ["queued", "running", "retry-waiting", "recovery-owned", "stalled"].includes(shoot.generationState || "");
+  const expired = !!shoot.retryWindowEndsAtMs && now > shoot.retryWindowEndsAtMs;
+  const closed = shoot.sample || expired || !!shoot.retriesClosedReason || shoot.generationLimitReached ||
+    shoot.deliveryClosed || shoot.status !== "done" ||
+    ["paused", "manual-review", "refund-hold"].includes(shoot.generationState || "");
+  const available = !closed && !automatic && !photo.hasActiveClaim &&
+    ["retryable", "blocked"].includes(photo.status || "") &&
+    (photo.manualAttempts || 0) < Math.max(0, Math.min(2, shoot.manualRetriesPerSlot ?? 1));
+  const working = !closed && (!!automatic || !!photo.retrying);
+  return { available, working, label: shoot.generationState === "paused" ? "Paused"
+    : photo.retrying ? "Retrying…" : working ? "Trying again…"
+    : available ? "One more try available" : "Couldn’t finish this photo" };
+}
 
 export function galleryState(shoot: Shoot, now: number) {
   const reshooting = shoot.photos.filter(photo => photo.reshooting ||
     (shoot.sample && photo.revision > 0 && photo.readyAt > now)).length;
-  const stopped = !shoot.sample && !reshooting &&
+  const retrying = shoot.photos.filter(photo => photo.retrying).length;
+  const stopped = !shoot.sample && !reshooting && !retrying && !shoot.automaticWorkPending &&
     ["failed", "finished", "paused", "manual-review", "refund-hold"]
       .some(value => value === shoot.status || value === shoot.generationState);
   let reshootUnavailable = "";
@@ -35,5 +52,5 @@ export function galleryState(shoot: Shoot, now: number) {
     ? new Intl.DateTimeFormat(undefined, {
       month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
     }).format(shoot.retryWindowEndsAtMs) : "";
-  return { reshooting, stopped, reshootUnavailable, reshootSummary, reshootDeadline };
+  return { reshooting, retrying, stopped, reshootUnavailable, reshootSummary, reshootDeadline };
 }

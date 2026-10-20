@@ -19,7 +19,7 @@ export function GalleryRecovery({ email, hasShoots, onRecovered, targetShootId }
         event.preventDefault(); if (busy || !service.recoverGalleries) return;
         const email = value.trim();
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
-          setError("Enter your checkout email, like you@example.com."); setInvalid(true); setMessage("");
+          setError("Enter your photo delivery email, like you@example.com."); setInvalid(true); setMessage("");
           input.current?.focus(); return;
         }
         setValue(email);
@@ -29,14 +29,14 @@ export function GalleryRecovery({ email, hasShoots, onRecovered, targetShootId }
           const foundTarget = targetShootId ? (await service.read()).shoots.some(shoot => shoot.id === targetShootId) : false;
           onRecovered();
           setMessage(targetShootId
-            ? foundTarget ? "Opening your photos…" : "This shoot wasn’t found for that email. Check the email you used to pay, or open My photos to see your other shoots. Deleted or refunded shoots are no longer available."
-            : count ? `Found ${count} ${count === 1 ? "photoshoot" : "photoshoots"}. Open a gallery below.` : "No web photoshoots found. Check that this is the email you used to pay on this website.");
+            ? foundTarget ? "Opening your photos…" : "This shoot wasn’t found for that email. Check your photo delivery email, or open My photos to see your other shoots. Deleted or refunded shoots are no longer available."
+            : count ? `Found ${count} ${count === 1 ? "photoshoot" : "photoshoots"}. Open a gallery below.` : "No web photoshoots found. Check that this is the photo delivery email you chose on this website.");
         } catch (e) { setError(e instanceof Error ? e.message : "Couldn’t find your photos. Please try again."); }
         finally { setBusy(false); }
       }}>
         <h2>{targetShootId ? "Open this shoot" : hasShoots ? "Looking for another shoot?" : "Find your photos"}</h2>
-        <p id="gallery-email-note">{targetShootId ? "Enter your checkout email. We’ll take you straight to this shoot." : "Enter the email you used at checkout to open your web galleries."}</p>
-        <label className="field-label" htmlFor="gallery-email">Checkout email</label>
+        <p id="gallery-email-note">{targetShootId ? "Enter your photo delivery email. We’ll take you straight to this shoot." : "Enter your photo delivery email to open your web galleries."}</p>
+        <label className="field-label" htmlFor="gallery-email">Photo delivery email</label>
         <div className="recovery-fields">
           <div className="recovery-email">
             <input ref={input} id="gallery-email" type="email" inputMode="email" autoComplete="email"
@@ -132,7 +132,7 @@ export function PaymentReturn({ orderId, shoots }: { orderId: string; shoots: St
       : checkout?.state === "expired" ? "No new payment can be made with this checkout. Return to your selfies to start again."
       : checkout?.state === "needs-support" ? "Contact support with the order reference below. Please do not pay again while we check it."
       : checkout?.state === "fulfilled" ? "Your gallery will open when it is available. If you already deleted these photos, they cannot be restored. Contact support if your gallery does not appear."
-      : checkout?.state === "paid" ? "Your shoot is being prepared. You can return to My photos using your checkout email."
+      : checkout?.state === "paid" ? "Your shoot is being prepared. You can return to My photos using your photo delivery email."
       : "We confirm payment securely before any paid generation starts."}</p>
     {error && <p className="form-error" role="alert">{error}</p>}
     {checkout?.state === "open" && checkout.url && !editing && <a className="button" href={checkout.url}>Continue to secure checkout</a>}
@@ -159,10 +159,10 @@ export function LiveInfo({ type }: { type: "help" | "privacy" | "terms" }) {
       <li>Choose a destination and a look, then add 4–6 clear selfies of yourself (18 or older).</li>
       <li>Enter your delivery email and pay once through Stripe. No Google login or subscription is required.</li>
       <li>Watch your photos arrive in My photos. Processing continues when you close this page, and your completed set is emailed to you automatically.</li>
-      <li>Download your favorites. If something needs attention, contact support with your order reference.</li>
+      <li>Save your photos. If something needs attention, contact support with your order reference.</li>
     </ol><p>AI results can vary. The collection images show the setting and style, rather than a guaranteed result.</p></>
       : type === "privacy" ? <><p className="lead">Your photos, on the web.</p>
-        <p>Your browser remembers your galleries. On another browser, enter your checkout email in My photos to find them. Anyone who knows that email can access those web galleries and use their remaining reshoots. We also email your completed photos as attachments.</p>
+        <p>Your browser remembers your galleries. On another browser, enter your photo delivery email in My photos to find them. Anyone who knows that email can access those web galleries and use their remaining reshoots. We also email your completed photos as attachments.</p>
         <p>After you continue to checkout, your selfies are uploaded for processing. Firebase stores your studio data, Stripe handles payment, and our AI provider generates your photos.</p>
         <p>Use My photos → Photo settings to remove draft selfies or delete photos created in this browser. Contact support to delete a recovered gallery. Downloaded files remain on your device.</p>
         <a href="/privacy.html" target="_blank" rel="noreferrer">Full privacy policy</a></>
@@ -184,7 +184,7 @@ export function LiveAccount({ state, notify }: { state: StudioState; notify: (te
   return <div className="prose">
     <p className="lead">Photo settings</p>
     <p>{state.recoveryEmail || state.email || "Your delivery email is collected at checkout."}</p>
-    <p>On another browser, open My photos and enter your checkout email to find your galleries.</p>
+    <p>On another browser, open My photos and enter your photo delivery email to find your galleries.</p>
     <p><Download size={16} /> {state.shoots.length} photoshoots</p>
     <h3>Your photos</h3>
     <button className="button secondary full" disabled={busy || (!state.draft && !state.savedSelfies)}

@@ -670,3 +670,27 @@ it("gallery settlement preserves a newer draft and requires its earlier payment 
   expect(await reopened.checkout(newer!, "buyer@example.com")).toMatchObject({ orderId: "order_1", state: "fulfilled" });
   expect(api.beginWebCheckout).toHaveBeenCalledTimes(1);
 });
+
+it("recovered missing-photo retries coalesce and refresh without spending a reshoot or sending mail", async () => {
+  const recovered = { ...job(), uid: 'other-browser', generationState: 'finished', manualRetriesPerSlot: 1 };
+  recovered.slots[1].status = 'retryable';
+  api.listJobs.mockResolvedValue([]);
+  api.listWebGalleries = vi.fn().mockResolvedValue({ email: 'buyer@example.com', jobs: [recovered], nextCursor: null });
+  let finish!: () => void;
+  api.retrySlot = vi.fn().mockImplementation(() => new Promise<void>(resolve => { finish = resolve; }));
+  await service.read();
+  const first = service.retryPhoto('job_1', 's1');
+  const second = service.retryPhoto('job_1', 's1');
+  expect(first).toBe(second);
+  await vi.waitFor(() => expect(api.retrySlot).toHaveBeenCalledExactlyOnceWith('job_1', 's1'));
+  finish(); await first;
+  expect(api.listWebGalleries.mock.calls.length).toBeGreaterThan(1);
+  expect((await service.read()).shoots[0].reshootsLeft).toBe(3);
+  expect(api.reshoot).not.toHaveBeenCalled();
+});
+
+it("each original-browser gallery retains its own paid delivery email", async () => {
+  await service.checkout(draft, 'first@example.com');
+  api.listJobs.mockResolvedValue([{ ...job(), orderId: 'order_1' }]);
+  expect((await service.read()).shoots[0].deliveryEmail).toBe('first@example.com');
+});

@@ -5,15 +5,17 @@ import type { Pack } from "../../src/lib/types";
 const packs: Pack[] = JSON.parse(readFileSync(new URL("../../src/lib/catalog.json", import.meta.url), "utf8"));
 const pack = packs.find(value => value.packId === "paris")!;
 
-async function recoveredGallery(page: Page, emailState = "sent") {
+async function recoveredGallery(page: Page, emailState = "sent", missing = false) {
   const uid = `w_${"a".repeat(40)}`, owner = `w_${"b".repeat(40)}`;
   const job = {
     id: "recovery-test", uid: owner, packId: "paris", styling: "m", styleId: "tailored",
     clientVisible: true, status: "done", generationState: "finished", reshootsLeft: 3,
     retryWindowEndsAtMs: Date.now() + 86400000, emailRequestState: emailState,
+    deliveryEmail: "photos@example.com", manualRetriesPerSlot: 1,
     slots: Array.from({ length: 12 }, (_, i) => ({
       slotId: `s${i}`, sceneId: pack.scenes[Math.floor(i / 2)].sceneId, take: i % 2 + 1,
-      status: "done", path: `outputs/${owner}/recovery-test/p${i}.jpg`,
+      status: missing && i === 11 ? "retryable" : "done", manualAttempts: 0,
+      path: missing && i === 11 ? undefined : `outputs/${owner}/recovery-test/p${i}.jpg`,
     })),
     readableOutputPaths: Array.from({ length: 12 }, (_, i) => `outputs/${owner}/recovery-test/p${i}.jpg`),
   };
@@ -27,6 +29,13 @@ async function recoveredGallery(page: Page, emailState = "sent") {
       let connection = 'ready';
       window.setGalleryConnection = value => { connection = value; };
       window.setDeliveryState = value => { job.emailRequestState = value; };
+      window.setMissingState = (state, attempts = 0) => {
+        job.generationState = state;
+        job.slots[11].manualAttempts = attempts;
+      };
+      window.retryCalls = 0;
+      window.finishPhotoRetry = () => {};
+
       const api = {
         session: { uid: ${JSON.stringify(uid)}, webAppId: 'isolated-qa', capabilityVersion: 1 },
         listJobs: async () => [], watchJobs: async () => () => {}, recordEvent: async () => {},
@@ -40,6 +49,15 @@ async function recoveredGallery(page: Page, emailState = "sent") {
           return (await fetch('/assets/scenes/paris/m/tailored/' + Math.floor(i / 2) + '.webp')).blob();
         },
         assertGalleryPhotos: async () => {},
+        retrySlot: async (jobId, slotId) => {
+          window.retryCalls++;
+          if (jobId !== job.id || slotId !== 's11') throw Error('Wrong photo');
+          const slot = job.slots[11]; slot.status = 'developing'; slot.retrying = true; slot.hasActiveClaim = true;
+          await new Promise(resolve => { window.finishPhotoRetry = resolve; });
+          slot.status = 'done'; slot.retrying = false; slot.hasActiveClaim = false;
+          slot.path = 'outputs/' + job.uid + '/' + job.id + '/p11.jpg';
+          slot.manualAttempts = 1;
+        },
       };
       export const service = new LiveStudioService(async () => api, 'gallery-recovery-' + crypto.randomUUID());
     `,
@@ -89,7 +107,7 @@ test("unconfirmed delivery offers all available photos and support, then clears 
   });
   await recoveredGallery(page, "failed");
   const notice = page.getByRole("status", { name: "Email delivery update" });
-  await expect(notice).toContainText("We couldn’t confirm your email delivery.");
+  await expect(notice).toContainText("We couldn’t deliver your email.");
   await expect(notice.getByRole("link", { name: "Get help" })).toHaveAttribute("href", /subject=Web%20shoot%20recovery-test/);
   await page.getByRole("checkbox", { name: "Select s0", exact: true }).check();
   await notice.getByRole("button", { name: "Save photos", exact: true }).click();
@@ -101,4 +119,39 @@ test("unconfirmed delivery offers all available photos and support, then clears 
   });
   await expect(notice).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Paris, with you." })).toBeVisible();
+});
+
+test("an email-recovered missing photo retries for free, then joins the gallery", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await recoveredGallery(page, "sent", true);
+  await expect(page.locator(".delivery-destination")).toContainText("photos@example.com");
+  const tile = page.locator(".photo-tile").last();
+  await expect(page.locator(".gallery-toolbar")).toContainText("11 of 12");
+  await expect(tile.getByRole("button", { name: /Reshoot/ })).toHaveCount(0);
+  await tile.getByRole("button", { name: /Retry .*for free/ }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Retrying your missing photo" })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => Reflect.get(window, "retryCalls"))).toBe(1);
+  await page.evaluate(() => Reflect.get(window, "finishPhotoRetry")());
+  await expect(page.locator(".gallery-toolbar")).toContainText("12 of 12");
+  await expect(tile.getByRole("button", { name: "Reshoot s11", exact: true })).toBeEnabled();
+  await expect(page.locator(".lead")).toContainText("3 reshoots left");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test("automatic attempts finish before manual retry is offered, and spent retries stop spinning", async ({ page }) => {
+  await recoveredGallery(page, "sent", true);
+  await page.evaluate(() => {
+    Reflect.get(window, "setMissingState")("retry-waiting");
+    window.dispatchEvent(new Event("focus"));
+  });
+  const tile = page.locator(".photo-tile").last();
+  await expect(tile).toContainText("Trying again…");
+  await expect(tile.getByRole("button", { name: /Retry .*for free/ })).toHaveCount(0);
+  await page.evaluate(() => {
+    Reflect.get(window, "setMissingState")("finished", 1);
+    window.dispatchEvent(new Event("focus"));
+  });
+  await expect(tile).toContainText("Couldn’t finish this photo");
+  await expect(tile.locator(".spin")).toHaveCount(0);
+  await expect(tile.getByRole("button", { name: /Retry .*for free/ })).toHaveCount(0);
 });

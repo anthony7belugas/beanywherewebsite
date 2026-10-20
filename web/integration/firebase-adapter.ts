@@ -47,6 +47,16 @@ export type NativeJobProjection = {
   deliveryClosed?: boolean;
   reshootsClosedReason?: string;
   emailRequestState?: string;
+  emailDeliveryOutcomeUnknown?: boolean;
+  emailRequestTo?: string;
+  deliveryEmail?: string;
+  manualRetriesPerSlot?: number;
+  retriesClosedReason?: string;
+  generationLimitReached?: boolean;
+  automaticWorkPending?: boolean;
+  recovering?: boolean;
+  generationClaimId?: string;
+  recoveryClaimId?: string;
   orderId?: string;
   reshootsLeft: number;
   readableOutputPaths?: string[];
@@ -58,6 +68,9 @@ export type NativeJobProjection = {
     path?: string;
     failureClass?: string;
     reshooting?: boolean;
+    retrying?: boolean;
+    hasActiveClaim?: boolean;
+    manualAttempts?: number;
     claimId?: string;
     prevPath?: string;
   }[];

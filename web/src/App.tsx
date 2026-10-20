@@ -7,7 +7,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
-  Heart,
   ImagePlus,
   Images,
   Info,
@@ -37,7 +36,8 @@ import {
 import { storefrontEntry, withoutStorefrontEntry } from "./lib/storefront-entry";
 import { InvalidStoredStateError } from "./lib/stored-state";
 import { emptyState, validateDraft } from "./lib/domain";
-import { galleryState } from "./lib/gallery-state";
+import { galleryState, photoRetryState } from "./lib/gallery-state";
+import { suggestedEmail } from "./lib/email";
 import { prepareReference, preparePhotoDownload, canSharePhotos, type PreparedPhotos } from "./lib/media";
 import type {
   Draft,
@@ -428,7 +428,7 @@ export default function App() {
           !currentShoot && !(liveMode && requestedShootId) && (
             <Empty
               title="This page has moved on."
-              body="Open My photos and enter your checkout email to find your galleries. Deleted or refunded shoots are no longer available."
+              body="Open My photos and enter your photo delivery email to find your galleries. Deleted or refunded shoots are no longer available."
             />
           )}
       </main>
@@ -486,7 +486,7 @@ export default function App() {
                   collected.
                 </li>
                 <li>
-                  Explore 12 sample photo slots, save favorites, try reshoots,
+                  Explore 12 sample photo slots, save photos, try reshoots,
                   and download previews.
                 </li>
               </ol>
@@ -642,18 +642,46 @@ function PackDetail({
         All photoshoots
       </a>
       <div className="detail-grid">
-        <div className="detail-visual">
-          <img
-            className="detail-cover"
-            src={cover(pack.packId, styling)}
-            alt={`${pack.title} illustrative cover`}
-          />
-          <span className="image-label">
-            <MapPin size={12} />
-            {location(pack.packId)}
-          </span>
-          <span className="cover-caption">A preview of the possibilities</span>
+      <section className="scene-section detail-scenes">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">12 PHOTOS TOTAL · 2 PER SCENE</p>
+            <h2>
+              A day in{" "}
+              {pack.title === "Elevated Everyday"
+                ? "your life"
+                : pack.title === "Night Out"
+                  ? "the city"
+                  : pack.title}
+              .
+            </h2>
+          </div>
+          <span className="muted small">6 scenes included</span>
         </div>
+        <div className="scene-grid">
+          {pack.scenes.map((s, i) => (
+            <button
+              className="scene-card"
+              key={s.sceneId}
+              onClick={() => setScene(i)}
+            >
+              <img
+                loading="lazy"
+                src={sceneImage(pack, styling, styleId, i)}
+                alt={`${s.label} illustrative preview`}
+              />
+              <span>
+                <small>{String(i + 1).padStart(2, "0")}</small>
+                {s.label}
+              </span>
+            </button>
+          ))}
+        </div>
+        <p className="preview-caption">
+          Illustrative style previews, not verified results from uploaded
+          selfies.
+        </p>
+      </section>
         <div className="detail-copy">
           <p className="eyebrow">YOUR NEXT PHOTOSHOOT</p>
           <h1>
@@ -671,13 +699,13 @@ function PackDetail({
           <div className="detail-facts">
             <span>
               <Images size={17} />
-              12 photos
+              12 photos total
             </span>
             <span>
               <RotateCcw size={16} />3 reshoots
             </span>
             <span>
-              <Images size={17} />6 scenes
+              <Images size={17} />2 per scene
             </span>
           </div>
           <hr />
@@ -701,6 +729,8 @@ function PackDetail({
               </button>
             ))}
           </div>
+        </div>
+        <div className="detail-action">
           <button
             className="button full"
             disabled={busy}
@@ -729,46 +759,6 @@ function PackDetail({
           </p>
         </div>
       </div>
-      <section className="scene-section">
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">SIX SCENES. ONE STORY.</p>
-            <h2>
-              A day in{" "}
-              {pack.title === "Elevated Everyday"
-                ? "your life"
-                : pack.title === "Night Out"
-                  ? "the city"
-                  : pack.title}
-              .
-            </h2>
-          </div>
-          <span className="muted small">Two takes of every scene</span>
-        </div>
-        <div className="scene-grid">
-          {pack.scenes.map((s, i) => (
-            <button
-              className="scene-card"
-              key={s.sceneId}
-              onClick={() => setScene(i)}
-            >
-              <img
-                loading="lazy"
-                src={sceneImage(pack, styling, styleId, i)}
-                alt={`${s.label} illustrative preview`}
-              />
-              <span>
-                <small>{String(i + 1).padStart(2, "0")}</small>
-                {s.label}
-              </span>
-            </button>
-          ))}
-        </div>
-        <p className="preview-caption">
-          Illustrative style previews, not verified results from uploaded
-          selfies.
-        </p>
-      </section>
       {scene !== null && (
         <Modal title={pack.scenes[scene].label} onClose={close} wide>
           <div className="scene-preview">
@@ -806,7 +796,7 @@ function ShootSummary({ draft }: { draft: Draft }) {
         <ul>
           <li>
             <Check size={14} />
-            12 photos across six scenes
+            12 photos total · 2 per scene
           </li>
           <li>
             <Check size={14} />3 individual reshoots
@@ -1130,6 +1120,7 @@ function Checkout({
   onPrivacy: () => void;
 }) {
   const [email, setEmail] = useState(draft.email);
+  const emailSuggestion = suggestedEmail(email);
   const [busy, setBusy] = useState(false);
   const [attemptStarted, setAttemptStarted] = useState(false);
   const [error, setError] = useState("");
@@ -1182,7 +1173,7 @@ function Checkout({
         </div>
         <form onSubmit={submit} noValidate>
           <label className="field-label" htmlFor="email">
-            Your email
+            Photo delivery email
           </label>
           <input
             className="text-input"
@@ -1190,8 +1181,12 @@ function Checkout({
             type="email"
             disabled={busy}
             autoComplete="email"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
             placeholder="you@example.com"
             value={email}
+            onBlur={() => void service.updateDraft(draft, { email: email.trim() }).catch(error => setError((error as Error).message))}
             onChange={(e) => {
               setEmail(e.target.value);
               setError("");
@@ -1201,8 +1196,14 @@ function Checkout({
             maxLength={254}
           />
           <p id="email-note" className="input-note">
-            {liveMode ? "We’ll email your finished photos here. This email also opens your web galleries in My photos—keep it handy." : "Saved locally for this demo. No account is created and no email is sent."}
+            {liveMode ? "We’ll send your finished photos here. Use this email to find your photos later. You can edit it before paying." : "Saved locally for this demo. No account is created and no email is sent."}
           </p>
+          {emailSuggestion && <p className="email-suggestion">Did you mean{" "}
+            <button type="button" className="text-button" disabled={busy} onClick={() => {
+              setEmail(emailSuggestion); setError("");
+              void service.updateDraft(draft, { email: emailSuggestion }).catch(error => setError((error as Error).message));
+            }}>{emailSuggestion}</button>?
+          </p>}
           <div className="payment-preview">
             <div className="payment-title">
               <LockKeyhole size={19} />
@@ -1228,7 +1229,7 @@ function Checkout({
             </div>
           </div>
           <p className="checkout-disclosure">
-            {liveMode ? "Continuing uploads your selfies and opens Stripe checkout. Generation begins only after the server confirms payment. AI results can vary." : "This preview uses sample images, not AI results from your selfies. Your reference photos never leave this browser."}
+            {liveMode ? "We’ll use the photo delivery email above, even if your payment account uses another address. Continuing uploads your selfies and opens Stripe. AI results can vary." : "This preview uses sample images, not AI results from your selfies. Your reference photos never leave this browser."}
           </p>
           {error && (
             <p className="form-error" role="alert">
@@ -1272,10 +1273,6 @@ function Checkout({
 }
 
 function Library({ shoots, email, now, onSettings }: { shoots: Shoot[]; email: string; now: number; onSettings: () => void }) {
-  const [filter, setFilter] = useState("All shoots");
-  const filtered = shoots.filter(
-    (s) => filter === "All shoots" || s.photos.some((p) => p.favorite),
-  );
   return (
     <section className="library">
 
@@ -1287,31 +1284,19 @@ function Library({ shoots, email, now, onSettings }: { shoots: Shoot[]; email: s
         </a>
       </div>
       <div className="library-guidance"><p>{liveMode ? "Your photoshoots, all in one place. Open a gallery to download photos or use a reshoot." : "Your saved sample photoshoots in this browser."}</p></div>
-      {liveMode && <GalleryRecovery email={email} hasShoots={shoots.length > 0} onRecovered={() => setFilter("All shoots")} />}
+      {liveMode && <GalleryRecovery email={email} hasShoots={shoots.length > 0} onRecovered={() => {}} />}
       {shoots.length > 0 && <div className="library-toolbar">
-        <div className="filters">
-          {["All shoots", "With favorites"].map((f) => (
-            <button
-              className={filter === f ? "selected" : ""}
-              aria-pressed={filter === f}
-              key={f}
-              onClick={() => setFilter(f)}
-            >
-              {f}
-            </button>
-          ))}
-        </div>
         <span>
-          {filtered.length}{" "}
-          {filtered.length === 1 ? "photoshoot" : "photoshoots"}
+          {shoots.length}{" "}
+          {shoots.length === 1 ? "photoshoot" : "photoshoots"}
         </span>
       </div>}
-      {filtered.length ? (
+      {shoots.length ? (
         <div className="pack-grid">
-          {filtered.map((shoot) => {
+          {shoots.map((shoot) => {
             const pack = packById(shoot.packId)!;
             const done = shoot.photos.filter((p) => p.readyAt <= now).length;
-            const { reshootSummary, reshootDeadline } = galleryState(shoot, now);
+            const { reshootSummary, reshootDeadline, retrying, reshooting, stopped } = galleryState(shoot, now);
             return (
               <a
                 className="pack-card library-card"
@@ -1326,12 +1311,12 @@ function Library({ shoots, email, now, onSettings }: { shoots: Shoot[]; email: s
                   <span className="library-state">
                     {done === 12 ? (
                       <Check size={13} />
-                    ) : !shoot.sample && ["failed", "finished", "paused", "manual-review", "refund-hold"].some(value => value === shoot.status || value === shoot.generationState) ? (
+                    ) : stopped ? (
                       <Info size={13} />
                     ) : (
                       <LoaderCircle className="spin" size={13} />
                     )}{" "}
-                    {done === 12 ? "Ready to explore" : !shoot.sample && ["failed", "finished", "paused", "manual-review", "refund-hold"].includes(shoot.generationState || shoot.status || "") ? `${done} photos · Open for details` : `Developing ${done}/12`}
+                    {done === 12 ? "Ready to explore" : retrying ? "Retrying your photo" : reshooting ? "Reshoot in progress" : stopped ? `${done} photos · Open for details` : `Developing ${done}/12`}
                   </span>
                 </div>
                 <div className="pack-card-heading">
@@ -1344,7 +1329,6 @@ function Library({ shoots, email, now, onSettings }: { shoots: Shoot[]; email: s
                       (s) => s.id === shoot.styleId,
                     )?.label
                   }{" "}
-                  · {shoot.photos.filter((p) => p.favorite).length} favorites
                 </p>
                 <div className="pack-meta">
                   {shoot.sample ? "12 sample slots" : `${done} photos ready`} · {reshootSummary}
@@ -1357,16 +1341,8 @@ function Library({ shoots, email, now, onSettings }: { shoots: Shoot[]; email: s
       ) : !liveMode || shoots.length > 0 ? (
         <Empty
           icon={<Images size={36} strokeWidth={1} />}
-          title={
-            filter === "All shoots"
-              ? "Your photos will appear here."
-              : "Make a few favorites."
-          }
-          body={
-            filter === "All shoots"
-              ? liveMode ? "Your paid photoshoots will appear here, including shoots still being prepared." : "Your photoshoots will live here. Pick a setting and take the demo for a spin."
-              : "Tap the heart on a photo to add it to your favorites."
-          }
+          title="Your photos will appear here."
+          body={liveMode ? "Your paid photoshoots will appear here, including shoots still being prepared." : "Your photoshoots will live here. Pick a setting and take the demo for a spin."}
         />
       ) : <div className="new-shoot-prompt"><p>Your next setting is waiting.</p><a className="text-button" href={homeHref}>Choose a photoshoot →</a></div>}
       <div className="library-settings"><button className="text-button" onClick={onSettings}>Photo settings</button><a href="mailto:support@beanywhere.app">Get help</a></div>
@@ -1392,14 +1368,15 @@ function Gallery({
 }) {
   const pack = packById(shoot.packId)!;
   const suggested = nextPack(shoot.packId, ownedPackIds);
-  const [favorites, setFavorites] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const photos = shoot.photos.filter((p) => !favorites || p.favorite);
+  const photos = shoot.photos;
   const done = shoot.photos.filter((p) => p.readyAt <= now);
-  const { reshooting, stopped, reshootUnavailable, reshootDeadline } = galleryState(shoot, now);
+  const { reshooting, retrying, stopped, reshootUnavailable, reshootDeadline } = galleryState(shoot, now);
+  const [retryPending, setRetryPending] = useState<string[]>([]);
+  const retryRequests = useRef(new Set<string>());
   const [reshootPending, setReshootPending] = useState(false);
   const [reshootConfirmation, setReshootConfirmation] = useState<{ shootId: string; photo: Photo } | null>(null);
   const reshootRequest = useRef(false);
@@ -1519,6 +1496,17 @@ function Gallery({
       setBusy(false);
     }
   };
+  const retryPhoto = async (photo: Photo) => {
+    if (!service.retryPhoto || retryRequests.current.has(photo.slotId)) return;
+    retryRequests.current.add(photo.slotId);
+    setRetryPending(current => [...current, photo.slotId]);
+    try { await service.retryPhoto(shoot.id, photo.slotId); }
+    catch (error) { notify((error as Error).message); }
+    finally {
+      retryRequests.current.delete(photo.slotId);
+      setRetryPending(current => current.filter(id => id !== photo.slotId));
+    }
+  };
   const changePhoto = (direction: number) => {
     const i = visibleReady.findIndex((p) => p.slotId === lightbox);
     setLightbox(
@@ -1535,7 +1523,7 @@ function Gallery({
       <div className="section-heading">
         <div>
           <p className="eyebrow">
-            {reshooting ? "YOUR RESHOOT IS BEING CREATED" : done.length < 12 && !stopped
+            {reshooting ? "YOUR RESHOOT IS BEING CREATED" : retrying || retryPending.length ? "RETRYING YOUR PHOTO" : done.length < 12 && !stopped
               ? "YOUR PHOTOS ARE BEING CREATED"
               : "YOUR PHOTOSHOOT"}
           </p>
@@ -1543,7 +1531,7 @@ function Gallery({
             {pack.title}, <em>with you.</em>
           </h1>
           <p className="lead">
-            {reshooting ? `Reshooting ${reshooting} ${reshooting === 1 ? "photo" : "photos"} · ${done.length} of 12 ready` : done.length < 12
+            {reshooting ? `Reshooting ${reshooting} ${reshooting === 1 ? "photo" : "photos"} · ${done.length} of 12 ready` : retrying || retryPending.length ? `Retrying your photo · ${done.length} of 12 ready` : done.length < 12
               ? `${shoot.sample ? "Developing your demo" : shoot.generationState === "finished" ? "Shoot finished" : shoot.status === "failed" ? "This shoot needs attention" : "Preparing your photos"} · ${done.length} of 12 ready`
               : `${shoot.sample ? "12 sample photo slots" : "12 photos ready"}${reshootUnavailable ? "" : ` · ${shoot.reshootsLeft} reshoots left`}`}
           </p>
@@ -1561,11 +1549,13 @@ function Gallery({
           {busy ? "Preparing" : shareAvailable ? "Save" : "Download"}{" "}
           {visibleSelected.length
             ? "selected"
-            : favorites
-              ? "favorites"
-              : "all"}
+            : "all"}
         </button>
       </div>
+      {!shoot.sample && shoot.deliveryEmail && <p className="delivery-destination">
+        {["sent", "failed", "cancelled"].includes(shoot.emailRequestState || "") ? "Photo delivery email: " : "Your photos will be sent to "}
+        <strong>{shoot.deliveryEmail}</strong>
+      </p>}
       <div className="reshoot-guide">
         <RotateCcw size={19} aria-hidden="true" />
         <p><strong>3 individual reshoots included.</strong>{" "}
@@ -1576,8 +1566,8 @@ function Gallery({
       {!shoot.sample && shoot.emailRequestState === "failed" && <div className="notice gallery-status" role="status" aria-label="Email delivery update">
         <Info size={18} aria-hidden="true" />
         <div>
-          <p><strong>We couldn’t confirm your email delivery.</strong>{" "}
-            You can save your photos here, or contact us for help.</p>
+          <p><strong>{shoot.emailDeliveryOutcomeUnknown ? "We couldn’t confirm your email delivery." : "We couldn’t deliver your email."}</strong>{" "}
+            Your photos are still available here to view and save.</p>
           <div className="notice-actions">
             <button className="button secondary" disabled={!done.length || busy} onClick={() => void download(done)}>
               {busy ? "Preparing…" : shareAvailable ? "Save photos" : "Download photos"}
@@ -1590,7 +1580,7 @@ function Gallery({
         <a href={`mailto:support@beanywhere.app?subject=${encodeURIComponent(`Web shoot ${shoot.id}`)}`}>Email support@beanywhere.app</a>.
       </p>}
       {reshooting > 0 && <div className="notice" role="status"><LoaderCircle size={18} className="spin" /><p>Your new version is being created. Your other photos are ready to save.</p></div>}
-      {done.length < 12 && !stopped && !reshooting && (
+      {done.length < 12 && !stopped && !reshooting && !retrying && !retryPending.length && (
         <div className="progress-panel">
           <div>
             <Images size={20} />
@@ -1603,10 +1593,14 @@ function Gallery({
             aria-label={shoot.sample ? "Demo photos completed" : "Photos completed"}
           />
           <p>
-            {shoot.sample ? "You can leave this page and return to My photos. Your demo progress is saved." : "You can close this page. We’ll email your finished photos. Return anytime through My photos using your checkout email."}
+            {shoot.sample ? "You can leave this page and return to My photos. Your demo progress is saved." : "You can close this page. We’ll email your finished photos. Return anytime through My photos using your photo delivery email."}
           </p>
         </div>
       )}
+      {(retrying > 0 || retryPending.length > 0) && <div className="notice" role="status"><LoaderCircle size={18} className="spin" /><p>Retrying your missing photo. When ready, it will appear here to save.</p></div>}
+      {!shoot.sample && shoot.photos.some(photo => photoRetryState(shoot, photo, now).available) && <p className="retry-guide">
+        Retry a missing photo for free. It won’t use a reshoot. When ready, your photo will appear here to save.
+      </p>}
       {shoot.sample && <div className="notice gallery-notice">
         <Info size={18} />
         <p>
@@ -1617,30 +1611,7 @@ function Gallery({
       </div>}
       {stopped && done.length < 12 && <div className="notice"><Info size={18} /><p>{shoot.generationState === "paused" ? "Generation is temporarily paused." : "Some photos could not be completed."}{done.length > 0 && " You can still save your available photos."}</p></div>}
       <div className="gallery-toolbar">
-        <div className="filters">
-          <button
-            className={!favorites ? "selected" : ""}
-            aria-pressed={!favorites}
-            onClick={() => {
-              setFavorites(false);
-              setSelected([]);
-            }}
-          >
-            All photos <span>12</span>
-          </button>
-          <button
-            className={favorites ? "selected" : ""}
-            aria-pressed={favorites}
-            onClick={() => {
-              setFavorites(true);
-              setSelected([]);
-            }}
-          >
-            <Heart size={14} />
-            Favorites{" "}
-            <span>{shoot.photos.filter((p) => p.favorite).length}</span>
-          </button>
-        </div>
+        <span>{done.length} of 12 photos ready</span>
         <div>
           <button
             className="text-button"
@@ -1668,6 +1639,9 @@ function Gallery({
       <div className="gallery-grid">
         {photos.map((photo) => {
           const ready = photo.readyAt <= now;
+          const retry = photoRetryState(shoot, photo, now);
+          const requestingRetry = retryPending.includes(photo.slotId);
+          const developing = photo.reshooting || (shoot.sample && photo.revision) || requestingRetry || photo.retrying || (!stopped && !["closed", "failed", "blocked"].includes(photo.status || ""));
           return (
             <article
               className={`photo-tile ${selected.includes(photo.slotId) ? "is-selected" : ""}`}
@@ -1703,31 +1677,12 @@ function Gallery({
                         <Check size={12} />
                       </span>
                     </label>
-                    <button
-                      className={`favorite ${photo.favorite ? "liked" : ""}`}
-                      aria-label={`${photo.favorite ? "Unfavorite" : "Favorite"} ${photo.slotId}`}
-                      aria-pressed={photo.favorite}
-                      onClick={() =>
-                        void handle(() =>
-                          service.setFavorite(
-                            shoot.id,
-                            photo.slotId,
-                            !photo.favorite,
-                          ),
-                        )
-                      }
-                    >
-                      <Heart
-                        size={16}
-                        fill={photo.favorite ? "currentColor" : "none"}
-                      />
-                    </button>
                   </>
                 ) : (
                   <div className="photo-developing">
-                    <LoaderCircle size={29} className="spin" />
+                    {developing ? <LoaderCircle size={29} className="spin" /> : <Info size={29} />}
                     <span>
-                      {photo.reshooting || (shoot.sample && photo.revision) ? "Reshooting…" : stopped ? "Not ready" : "Developing…"}
+                      {photo.reshooting || (shoot.sample && photo.revision) ? "Reshooting…" : requestingRetry ? "Retrying…" : photo.retrying || ["retryable", "blocked", "closed", "failed"].includes(photo.status || "") || stopped ? retry.label : "Developing…"}
                     </span>
                   </div>
                 )}
@@ -1740,7 +1695,7 @@ function Gallery({
                     {photo.revision ? ` · Reshoot ${photo.revision}` : ""}
                   </span>
                 </div>
-                <button
+                {ready ? (<button
                   className="reshoot-button"
                   aria-label={`Reshoot ${photo.slotId}`}
                   disabled={!ready || !!reshootUnavailable || reshootPending}
@@ -1752,25 +1707,18 @@ function Gallery({
                   }}
                 >
                   <RotateCcw size={14} aria-hidden="true" /> Reshoot
-                </button>
+                </button>) : retry.available && service.retryPhoto ? (
+                  <button className="reshoot-button retry-button" disabled={requestingRetry}
+                    aria-label={`Retry ${photo.label}, take ${photo.take} for free`}
+                    onClick={() => void retryPhoto(photo)}>
+                    <RotateCcw size={14} aria-hidden="true" /> {requestingRetry ? "Retrying…" : "Retry photo — free"}
+                  </button>
+                ) : null}
               </div>
             </article>
           );
         })}
       </div>
-      {!photos.length && (
-        <div className="no-results">
-          <Heart />
-          <h3>Your favorites will be right here.</h3>
-          <p>Tap a heart on any photo in your shoot.</p>
-          <button
-            className="button secondary"
-            onClick={() => setFavorites(false)}
-          >
-            See all photos
-          </button>
-        </div>
-      )}
       {done.length === 12 && suggested && !["failed", "refunded"].includes(shoot.status || "") && shoot.generationState !== "refund-hold" && (
         <aside className="gallery-bottom" aria-label="Your next photoshoot">
           <img className="next-shoot-cover" src={cover(suggested.packId, shoot.styling)} alt={`${suggested.title} photoshoot preview`} loading="lazy" />
@@ -1860,24 +1808,6 @@ function Gallery({
               / {visibleReady.length}
             </span>
             <button
-              className={`icon-button ${activePhoto.favorite ? "liked" : ""}`}
-              aria-label="Toggle favorite photo"
-              onClick={() =>
-                void handle(() =>
-                  service.setFavorite(
-                    shoot.id,
-                    activePhoto.slotId,
-                    !activePhoto.favorite,
-                  ),
-                )
-              }
-            >
-              <Heart
-                fill={activePhoto.favorite ? "currentColor" : "none"}
-                size={20}
-              />
-            </button>
-            <button
               className="button secondary"
               disabled={busy}
               onClick={() => void download([activePhoto])}
@@ -1892,7 +1822,7 @@ function Gallery({
         <Modal title="Delete this sample shoot?" onClose={closeDelete}>
           <div className="prose">
             <p>
-              This removes the {pack.title} shoot and its favorites from this
+              This removes the {pack.title} shoot from this
               browser. Downloaded files stay on your device.
             </p>
             <div className="dialog-actions">
@@ -1963,15 +1893,6 @@ function Account({
         <div>
           <strong>{state.shoots.length}</strong>
           <span>Sample shoots</span>
-        </div>
-        <div>
-          <strong>
-            {state.shoots.reduce(
-              (n, s) => n + s.photos.filter((p) => p.favorite).length,
-              0,
-            )}
-          </strong>
-          <span>Favorites</span>
         </div>
         <div>
           <strong>$0</strong>

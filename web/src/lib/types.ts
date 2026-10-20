@@ -49,6 +49,9 @@ export type Photo = {
   path?: string;
   status?: string;
   reshooting?: boolean;
+  retrying?: boolean;
+  hasActiveClaim?: boolean;
+  manualAttempts?: number;
 };
 export type Shoot = {
   id: string;
@@ -67,6 +70,12 @@ export type Shoot = {
   deliveryClosed?: boolean;
   reshootsClosedReason?: string;
   emailRequestState?: string;
+  emailDeliveryOutcomeUnknown?: boolean;
+  deliveryEmail?: string;
+  manualRetriesPerSlot?: number;
+  retriesClosedReason?: string;
+  generationLimitReached?: boolean;
+  automaticWorkPending?: boolean;
 };
 export type CheckoutResult = Shoot | { kind: "payment"; orderId: string; url: string | null; jobId: string | null; state: string };
 export type StudioState = {
@@ -94,6 +103,7 @@ export interface StudioService {
   deleteAllPhotos?(): Promise<void>;
   recoverGalleries?(email: string): Promise<number>;
   refreshGalleries?(): Promise<void>;
+  retryPhoto?(shootId: string, slotId: string): Promise<void>;
   setFavorite(
     shootId: string,
     slotId: string,

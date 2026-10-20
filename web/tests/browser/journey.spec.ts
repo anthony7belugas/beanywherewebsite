@@ -14,14 +14,14 @@ async function start(page: import("@playwright/test").Page) {
   await expect(glasses).toBeChecked();
   await page.getByRole("checkbox", { name: /18 or older/ }).check();
   await page.getByRole("button", { name: "Review my shoot" }).click();
-  await page.getByLabel("Your email").fill("preview@example.com");
+  await page.getByLabel("Photo delivery email").fill("preview@example.com");
   await page.getByRole("button", { name: "Create my demo shoot" }).click();
   await expect(page).toHaveURL(/gallery/);
   await expect(
     page.getByRole("button", { name: "Reshoot s11", exact: true }),
   ).toBeEnabled({ timeout: 15000 });
 }
-test("complete desktop journey, persistence, favorites, ZIP, reshoot and deletion", async ({
+test("complete desktop journey, persistence, photo selection, ZIP, reshoot and deletion", async ({
   page,
 }) => {
   await page.addInitScript(() => {
@@ -40,14 +40,9 @@ test("complete desktop journey, persistence, favorites, ZIP, reshoot and deletio
   });
   await page.setViewportSize({ width: 1440, height: 1000 });
   await start(page);
-  await page.getByRole("button", { name: "Favorite s0", exact: true }).click();
-  await expect(
-    page.getByRole("button", { name: "Unfavorite s0", exact: true }),
-  ).toBeVisible();
+  await expect(page.getByRole("button", { name: /favorite/i })).toHaveCount(0);
   await page.reload();
-  await expect(
-    page.getByRole("button", { name: "Unfavorite s0", exact: true }),
-  ).toBeVisible();
+  await expect(page.locator(".photo-tile")).toHaveCount(12);
   const dl = page.waitForEvent("download");
   await page.getByRole("button", { name: "Download all", exact: true }).click();
   expect((await dl).suggestedFilename()).toMatch(/\.zip$/);
@@ -123,7 +118,7 @@ test("phone upload validation, draft recovery and complete privacy wipe", async 
   await page.getByRole("button", { name: "Review my shoot" }).click();
   await page.getByRole("button", { name: "Create my demo shoot" }).click();
   await expect(page.getByRole("alert")).toContainText("valid email");
-  await page.getByLabel("Your email").fill("phone@example.com");
+  await page.getByLabel("Photo delivery email").fill("phone@example.com");
   await page.screenshot({
     path: "../../work/web-draft-qa/mobile-checkout.png",
     fullPage: true,
@@ -164,4 +159,20 @@ test("catalog, all looks, narrow layouts, and unknown routes", async ({
   await expect(
     page.getByRole("heading", { name: "This page has moved on." }),
   ).toBeVisible();
+});
+
+test("delivery email is editable, offers a typo correction, and survives returning to selfies", async ({ page }) => {
+  await page.goto("/#/shoot/paris");
+  await page.getByRole("button", { name: "Add your selfies" }).click();
+  await page.getByRole("button", { name: /Use demo photos/ }).click();
+  await page.getByRole("checkbox", { name: /18 or older/ }).check();
+  await page.getByRole("button", { name: "Review my shoot" }).click();
+  const email = page.getByLabel("Photo delivery email");
+  await email.fill("alex@gmial.com");
+  await page.getByRole("button", { name: "alex@gmail.com", exact: true }).click();
+  await expect(email).toHaveValue("alex@gmail.com");
+  await email.fill("photos@example.com");
+  await page.getByRole("link", { name: "Back to your selfies" }).click();
+  await page.getByRole("button", { name: "Review my shoot" }).click();
+  await expect(email).toHaveValue("photos@example.com");
 });

@@ -1390,7 +1390,7 @@ hr {
 .reshoot-guide svg { flex-shrink: 0; margin-top: 2px; color: var(--accent); }
 .reshoot-guide p { margin: 0; font-size: 13px; line-height: 1.7; }
 .reshoot-guide strong { color: var(--text); }
-.order-support { margin: 0 0 24px; color: var(--muted); font-size: 13px; line-height: 1.8; }
+.order-support { margin: 0 0 24px; color: var(--dim); font-size: 13px; line-height: 1.8; }
 .order-support a { color: var(--text); overflow-wrap: anywhere; text-decoration: underline; text-underline-offset: 3px; }
 .save-photos-panel { display: grid; gap: 16px; }
 .save-photos-panel p { margin: 0; line-height: 1.7; }
@@ -2952,3 +2952,8 @@ progress::-moz-progress-bar {
   .header nav a { font-size: 11px; }
   .header .count { display: none; }
 }
+
+/* Complete previews lead the shoot detail, with a readable delivery destination. */
+.detail-grid .detail-scenes{padding:0;border:0;margin:0;min-width:0}.detail-scenes .section-heading{display:block}.detail-scenes .section-heading>span{display:block;margin-top:8px}.detail-scenes .scene-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:15px 10px}.detail-scenes .scene-card>span{font-size:11px;gap:5px}.delivery-destination{margin:0 0 20px;color:var(--dim);overflow-wrap:anywhere}.delivery-destination strong{color:var(--text)}.retry-guide{font-size:14px;line-height:1.6;margin:18px 0}.retry-button{white-space:normal;text-align:left}.photo-caption:has(.retry-button){flex-wrap:wrap;gap:10px}.email-suggestion{margin:0 0 15px;font-size:13px}.gallery-toolbar>span{color:var(--dim);font-size:13px}
+.detail-grid{display:grid;grid-template-columns:1.2fr 1fr;grid-template-areas:"scenes copy" "scenes action";grid-template-rows:auto 1fr;align-items:start;gap:24px 48px}.detail-grid .detail-scenes{grid-area:scenes}.detail-grid .detail-copy{grid-area:copy}.detail-grid .detail-action{grid-area:action;min-width:0}
+@media(max-width:760px){.detail-grid{grid-template-columns:minmax(0,1fr);grid-template-areas:"copy" "scenes" "action";grid-template-rows:auto;gap:25px}.detail-scenes .scene-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}

@@ -67,3 +67,37 @@ it("recovered gallery closure and deadline survive projection", () => {
   expect(galleryState(shoot, now).reshootUnavailable).toContain("attached to your email");
   expect(galleryState({ ...shoot, emailRequestState: "sent" }, now).reshootUnavailable).toBe("");
 });
+
+import { photoRetryState } from "../src/lib/gallery-state";
+
+function missingShoot() {
+  const source = job();
+  source.deliveryClosedAt = undefined;
+  source.manualRetriesPerSlot = 1;
+  source.slots[0] = { ...source.slots[0], status: "retryable", path: undefined, manualAttempts: 0 };
+  return projectWebJob(source, {});
+}
+
+it("a missing photo gets a free retry even with zero reshoots left", () => {
+  const shoot = { ...missingShoot(), reshootsLeft: 0 };
+  expect(photoRetryState(shoot, shoot.photos[0], now).available).toBe(true);
+});
+
+it.each([
+  { generationState: "running" }, { generationState: "retry-waiting" }, { generationState: "paused" },
+  { generationState: "manual-review" }, { status: "failed" }, { status: "refunded" },
+  { retryWindowEndsAtMs: now - 1 }, { automaticWorkPending: true }, { deliveryClosed: true },
+  { retriesClosedReason: "generation-limit" }, { generationLimitReached: true }, { manualRetriesPerSlot: 0 },
+])("does not offer a retry while unavailable: %j", patch => {
+  const shoot = { ...missingShoot(), ...patch };
+  expect(photoRetryState(shoot, shoot.photos[0], now).available).toBe(false);
+});
+
+it("a claimed retry stays busy, and an exhausted retry has a final non-spinning state", () => {
+  const shoot = missingShoot();
+  const photo = shoot.photos[0];
+  expect(photoRetryState(shoot, { ...photo, retrying: true, hasActiveClaim: true }, now))
+    .toMatchObject({ available: false, working: true, label: "Retrying…" });
+  expect(photoRetryState(shoot, { ...photo, manualAttempts: 1 }, now))
+    .toMatchObject({ available: false, working: false, label: "Couldn’t finish this photo" });
+});
