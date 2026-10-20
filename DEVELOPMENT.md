@@ -26,3 +26,7 @@ October 19 audit fixes: campaign styling is remembered and carried through publi
 Failed web shoots now link directly to support from the failure message, including the shoot reference, and keep completed photos available to save. The shared backend closes future failed web shoots without creating replacement credits; existing credits and native compensation are preserved. Deploy `onJobCreatedGenerate`, `recoverStuckJobs`, and `closeExpiredDeliveryWindows` before publishing this update. The existing automatic retries, partial-delivery emails, and simultaneous photo loading remain in place.
 
 Validation: all 259 backend release checks, 240 frontend tests, and 16 Chromium/WebKit gallery checks passed.
+
+Failed web galleries now show their final failure and support message immediately, even if a worker exits before clearing its automatic-work claim. Active retries and reshoots retain their progress states. This is a website-only change.
+
+Validation: 244 frontend tests and 72 Chromium/WebKit browser checks passed. A deeper audit also passed 16 focused backend suites covering payment races, gallery recovery, uploads, native isolation, failure handling, email delivery, generation budgets, reshoots, and refunds. Live Stripe event subscriptions, email-feedback configuration, generation settings, and relevant deployed functions were checked read-only. A real paid web purchase through generation, email receipt, and reshoot remains untested.

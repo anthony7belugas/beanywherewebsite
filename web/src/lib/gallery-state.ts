@@ -23,9 +23,11 @@ export function galleryState(shoot: Shoot, now: number) {
   const reshooting = shoot.photos.filter(photo => photo.reshooting ||
     (shoot.sample && photo.revision > 0 && photo.readyAt > now)).length;
   const retrying = shoot.photos.filter(photo => photo.retrying).length;
-  const stopped = !shoot.sample && !reshooting && !retrying && !shoot.automaticWorkPending &&
-    ["failed", "finished", "paused", "manual-review", "refund-hold"]
-      .some(value => value === shoot.status || value === shoot.generationState);
+  // Failure is final even if the worker exits before clearing its claim.
+  const stopped = !shoot.sample && (shoot.status === "failed" ||
+    (!reshooting && !retrying && !shoot.automaticWorkPending &&
+      ["finished", "paused", "manual-review", "refund-hold"]
+        .some(value => value === shoot.status || value === shoot.generationState)));
   let reshootUnavailable = "";
   let reshootSummary = `${shoot.reshootsLeft} ${shoot.reshootsLeft === 1 ? "reshoot" : "reshoots"} left`;
   if (reshooting) {

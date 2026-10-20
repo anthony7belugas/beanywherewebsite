@@ -109,3 +109,21 @@ it("early automatic recovery stays in progress before the six-photo reveal", () 
   expect(photoRetryState(shoot, { ...shoot.photos[0], status: "blocked" }, now))
     .toMatchObject({ available: false, working: true, label: "Finishing your shoot…" });
 });
+
+it.each([
+  { generationClaimId: "initial-worker" },
+  { recoveryClaimId: "recovery-worker", recovering: true },
+  { automaticWorkPending: true },
+])("a failed shoot stops immediately even before worker cleanup: %j", pending => {
+  const shoot = projectWebJob({ ...job(), ...pending, status: "failed" }, {});
+  expect(shoot.automaticWorkPending).toBe(true);
+  expect(galleryState(shoot, now)).toMatchObject({ stopped: true });
+  expect(galleryState(shoot, now).reshootUnavailable).toContain("unavailable");
+  expect(photoRetryState(shoot, shoot.photos[0], now)).toMatchObject({ available: false, working: false });
+});
+
+it("a settled partial shoot still waits for automatic work before offering manual retries", () => {
+  const shoot = { ...missingShoot(), automaticWorkPending: true };
+  expect(galleryState(shoot, now).stopped).toBe(false);
+  expect(photoRetryState(shoot, shoot.photos[0], now)).toMatchObject({ available: false, working: true });
+});

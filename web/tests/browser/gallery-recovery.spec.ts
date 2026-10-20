@@ -30,8 +30,9 @@ async function recoveredGallery(page: Page, emailState = "sent", missing = false
       window.setGalleryConnection = value => { connection = value; };
       window.setDeliveryState = value => { job.emailRequestState = value; };
       window.setDeliveryFeedback = value => { job.emailDeliveryFeedback = value; };
-      window.failShoot = count => {
+      window.failShoot = (count, automaticWorkPending = false) => {
         job.status = 'failed'; job.generationState = 'finished'; job.emailRequestState = '';
+        job.automaticWorkPending = automaticWorkPending;
         job.slots.forEach((slot, i) => { if (i >= count) { slot.status = 'closed'; delete slot.path; } });
         job.readableOutputPaths = job.slots.filter(slot => slot.path).map(slot => slot.path);
       };
@@ -173,13 +174,13 @@ test("a later email bounce shows the delivery warning without removing photos or
   await expect(page.getByRole("button", { name: "Reshoot s0", exact: true })).toBeEnabled();
 });
 
-for (const count of [0, 5]) test(`a failed ${count}-photo shoot never promises a delivery email`, async ({ page }) => {
+for (const count of [0, 5]) for (const pending of [false, true]) test(`a failed ${count}-photo shoot never promises a delivery email (worker pending: ${pending})`, async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await recoveredGallery(page);
-  await page.evaluate(count => {
-    Reflect.get(window, "failShoot")(count);
+  await page.evaluate(({ count, pending }) => {
+    Reflect.get(window, "failShoot")(count, pending);
     window.dispatchEvent(new Event("focus"));
-  }, count);
+  }, { count, pending });
   await expect(page.locator(".lead")).toContainText(`This shoot needs attention · ${count} of 12 ready`);
   await expect(page.locator(".gallery")).toContainText("We couldn’t complete your shoot.");
   await expect(page.getByRole("link", { name: "Contact support for help", exact: true }))
