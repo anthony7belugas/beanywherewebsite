@@ -31,11 +31,16 @@ async function setup(
               "/storefront.css",
               "/acquisition.js",
               "/analytics.js",
+              "/usage-settings.js",
+              "/public-pages.js",
+              "/usage-settings.css",
+              "/styles.css",
             ].includes(pathname)
           ? pathname.slice(1)
           : pathname === "/shoots/paris/"
             ? "shoots/paris/index.html"
-            : null;
+            : ["/support", "/privacy", "/terms"].includes(pathname)
+              ? pathname.slice(1) + ".html" : null;
     return file
       ? route.fulfill({
           body: readFileSync(new URL(file, root)),
@@ -416,4 +421,28 @@ test("blur, hide and pagehide do not count the same interval twice", async ({ pa
   expect(elapsed).toBeGreaterThanOrEqual(6900);
   expect(elapsed).toBeLessThan(7500);
   expect(await pageViews(page)).toHaveLength(2);
+});
+
+
+for (const path of ["/support", "/privacy", "/terms"]) test(`informational page ${path} records safe browsing and offers working usage settings`, async ({ page }) => {
+  await setup(page);
+  const backend: string[] = [];
+  page.on("request", request => {
+    if (/cloudfunctions\.net|firestore\.googleapis|identitytoolkit\.googleapis/.test(request.url()) && !request.url().includes("getWebAnalyticsPolicy")) backend.push(request.url());
+  });
+  await page.goto(path + "?email=private@example.com&order=secret");
+  await expect.poll(async () => (await pageViews(page)).length).toBe(1);
+  expect((await pageViews(page))[0].page_location).toBe("https://beanywhere.app" + path);
+  expect((await records(page)).filter(row => row[1] === "view_item_list" || row[1] === "view_item")).toHaveLength(0);
+  expect(JSON.stringify(await records(page))).not.toContain("private@example.com");
+  await page.getByRole("button", { name: "Usage settings" }).click();
+  await page.getByRole("checkbox", { name: "Share website usage data" }).uncheck();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  expect(await page.getByRole("dialog").count()).toBe(0);
+  await page.getByRole("link", { name: "BeAnywhere", exact: true }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await page.getByRole("button", { name: "Usage settings" }).click();
+  await expect(page.getByRole("checkbox", { name: "Share website usage data" })).not.toBeChecked();
+  expect(await pageViews(page)).toHaveLength(0);
+  expect(backend).toEqual([]);
 });

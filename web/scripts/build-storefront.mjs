@@ -7,12 +7,27 @@ const root = new URL('../../', import.meta.url);
 const revision = bytes => createHash('sha256').update(bytes).digest('hex').slice(0,16);
 await build({entryPoints:[new URL('../storefront/analytics.js',import.meta.url).pathname],bundle:true,format:'esm',minify:true,outfile:new URL('analytics.js',root).pathname});
 await copyFile(new URL('../storefront/acquisition.js',import.meta.url),new URL('acquisition.js',root));
-let storefront = await readFile(new URL('../storefront/storefront.js',import.meta.url),'utf8');
-for (const name of ['analytics','acquisition']) {
-  const version = revision(await readFile(new URL(`${name}.js`,root)));
-  storefront = storefront.replace(`'./${name}.js'`,`'./${name}.js?v=${version}'`);
+async function versionedScript(name, dependencies) {
+  let source = await readFile(new URL(`../storefront/${name}.js`,import.meta.url),'utf8');
+  for (const dependency of dependencies) {
+    const version = revision(await readFile(new URL(`${dependency}.js`,root)));
+    source = source.replace(`'./${dependency}.js'`,`'./${dependency}.js?v=${version}'`);
+  }
+  await writeFile(new URL(`${name}.js`,root),source);
+  return source;
 }
-await writeFile(new URL('storefront.js',root),storefront);
+await versionedScript('usage-settings',['analytics']);
+const storefront = await versionedScript('storefront',['analytics','acquisition','usage-settings']);
+const publicPages = await versionedScript('public-pages',['analytics','acquisition','usage-settings']);
+await copyFile(new URL('../storefront/usage-settings.css',import.meta.url),new URL('usage-settings.css',root));
+const publicVersion = revision(publicPages), settingsVersion = revision(await readFile(new URL('usage-settings.css',root)));
+for (const name of ['support','privacy','terms']) {
+  const path = new URL(`${name}.html`,root);
+  const html = (await readFile(path,'utf8'))
+    .replace(/src="\/public-pages\.js(?:\?v=[a-f0-9]+)?"/,`src="/public-pages.js?v=${publicVersion}"`)
+    .replace(/href="\/usage-settings\.css(?:\?v=[a-f0-9]+)?"/,`href="/usage-settings.css?v=${settingsVersion}"`);
+  await writeFile(path,html);
+}
 const storefrontVersion = revision(storefront);
 
 const packs = JSON.parse(await readFile(new URL('../src/lib/catalog.json', import.meta.url), 'utf8'));

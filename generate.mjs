@@ -1,6 +1,8 @@
 // Generates the shared Apple/Android website policies from legal-data.mjs.
 // Run: node generate.mjs. Keep the source aligned with both app policy variants.
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+const revision = name => createHash('sha256').update(readFileSync(new URL(name,import.meta.url))).digest('hex').slice(0,16);
 import { LEGAL_INFO, PRIVACY, TERMS } from './legal-data.mjs';
 
 const esc = (s) =>
@@ -57,6 +59,7 @@ function page({ title, slug, otherSlug, otherLabel, sections }) {
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/usage-settings.css?v=${revision('usage-settings.css')}">
 </head>
 <body>
   <header class="topbar">
@@ -80,9 +83,10 @@ ${renderSections(sections)}
 
   <footer class="site-footer">
     <div class="wrap">
-      © ${new Date().getFullYear()} ${esc(LEGAL_INFO.name)} · <a href="/${otherSlug}">${otherLabel}</a> · <a href="/support">Support</a> · <a href="/support#delete-account">Delete account</a> · <a href="mailto:${EMAIL}">Contact</a>
+      © ${new Date().getFullYear()} ${esc(LEGAL_INFO.name)} · <a href="/${otherSlug}">${otherLabel}</a> · <a href="/support">Support</a> · <a href="/support#delete-account">Delete account</a> · <a href="mailto:${EMAIL}">Contact</a> · <button type="button" data-analytics-settings>Usage settings</button>
     </div>
   </footer>
+<script type="module" src="/public-pages.js?v=${revision('public-pages.js')}"></script>
 </body>
 </html>
 `;

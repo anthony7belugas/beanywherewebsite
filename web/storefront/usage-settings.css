@@ -1,0 +1,3 @@
+.site-footer button[data-analytics-settings]{border:0;padding:0;background:none;color:inherit;font:inherit;cursor:pointer;text-decoration:underline}
+.analytics-dialog{box-sizing:border-box;background:#201b16;color:#f4f0e7;border:1px solid #665848;border-radius:12px;width:min(480px,calc(100% - 32px));padding:28px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.analytics-dialog::backdrop{background:#0009}.analytics-dialog h2{margin:0 0 16px;font-size:23px}.analytics-dialog p{line-height:1.5}.analytics-dialog label{display:block;margin:20px 0}.analytics-dialog button{font:inherit;padding:10px 20px;border-radius:7px;cursor:pointer}

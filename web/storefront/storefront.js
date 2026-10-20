@@ -1,4 +1,5 @@
-import { initAnalytics, trackWeb, analyticsAllowed, setAnalyticsAllowed } from './analytics.js';
+import { bindUsageSettings } from './usage-settings.js';
+import { initAnalytics, trackWeb } from './analytics.js';
 import { currentAttribution, attributedLink } from './acquisition.js';
 /* The public catalog works before browser sign-in. Only fixed catalog choices enter the studio. */
 (() => {
@@ -58,14 +59,5 @@ import { currentAttribution, attributedLink } from './acquisition.js';
     const action=link.dataset.start!==undefined?'add_selfies':link.dataset.shootLink?'select_shoot':url.hash==='#shoots'?'create_photos':url.hash==='#/library'?'my_photos':url.hostname==='play.google.com'?'google_play':url.protocol==='mailto:'?'support':url.hostname==='www.instagram.com'?'instagram':null;
     if(action)trackWeb(action==='select_shoot'?'select_item':'cta_clicked',{action,packId:link.dataset.shootLink || pack,styling,styleId:look});
   });
-  const privacy=document.querySelector('[data-analytics-settings]');
-  privacy?.addEventListener('click',()=>{
-    const dialog=document.createElement('dialog');
-    const title=document.createElement('h2');title.textContent='Website usage data';
-    const note=document.createElement('p');note.textContent='Help us understand visits and improve the photoshoot. This measures pages, device type, approximate location and actions. It does not send your email or photos to Google Analytics. Your browser’s privacy signal is respected.';
-    const label=document.createElement('label'),input=document.createElement('input');input.type='checkbox';input.checked=analyticsAllowed();
-    label.append(input,document.createTextNode(' Share website usage data'));
-    const close=document.createElement('button');close.type='button';close.textContent='Save';close.addEventListener('click',()=>{setAnalyticsAllowed(input.checked);dialog.close();dialog.remove();});
-    dialog.append(title,note,label,close);document.body.append(dialog);dialog.showModal();
-  });
+  bindUsageSettings();
 })();
