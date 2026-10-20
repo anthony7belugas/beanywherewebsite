@@ -49,7 +49,12 @@ import type {
 } from "./lib/types";
 import { Modal } from "./components/Modal";
 
-const homeHref = liveMode ? "/#shoots" : "#/";
+const homeHref = (() => {
+  if (!liveMode) return "#/";
+  let styling = new URLSearchParams(window.location.search).get("styling");
+  try { styling ||= localStorage.getItem("beanywhere-public-styling"); } catch { /* Optional preference. */ }
+  return styling === "w" || styling === "m" ? `/?styling=${styling}#shoots` : "/#shoots";
+})();
 function go(path: string) {
   if (liveMode && path === "/") window.location.assign(homeHref);
   else window.location.hash = path;
@@ -102,7 +107,7 @@ export default function App() {
   );
   const closeDialog = useCallback(() => setDialog(null), []);
   useEffect(() => {
-    if (redirectHome) window.location.replace("/");
+    if (redirectHome) window.location.replace(homeHref);
   }, [redirectHome]);
   useEffect(() => {
     if (!loaded || !liveMode) return;
@@ -300,7 +305,7 @@ export default function App() {
       </div>}
       <header className="header">
         <div className="shell header-inner">
-          <a className="wordmark" href={liveMode ? "/" : "#/"} aria-label="BeAnywhere home">BeAnywhere</a>
+          <a className="wordmark" href={homeHref} aria-label="BeAnywhere home">BeAnywhere</a>
           <nav aria-label="Main navigation">
             <a className="android-link" href="https://play.google.com/store/apps/details?id=com.besties.photo">Google Play ↗</a>
             <a className={path === "/library" || path.startsWith("/gallery/") ? "active" : ""} href="#/library">
@@ -1374,6 +1379,9 @@ function Gallery({
   const [busy, setBusy] = useState(false);
   const photos = shoot.photos;
   const done = shoot.photos.filter((p) => p.readyAt <= now);
+  const shootFailed = !shoot.sample && shoot.status === "failed";
+  const providerFailed = ["bounced", "failed", "suppressed"].includes(shoot.emailDeliveryFeedback || "");
+  const emailFailed = shoot.emailDeliveryFeedback !== "delivered" && (providerFailed || shoot.emailRequestState === "failed");
   const { reshooting, retrying, stopped, reshootUnavailable, reshootDeadline } = galleryState(shoot, now);
   const [retryPending, setRetryPending] = useState<string[]>([]);
   const retryRequests = useRef(new Set<string>());
@@ -1532,7 +1540,7 @@ function Gallery({
           </h1>
           <p className="lead">
             {reshooting ? `Reshooting ${reshooting} ${reshooting === 1 ? "photo" : "photos"} · ${done.length} of 12 ready` : retrying || retryPending.length ? `Retrying your photo · ${done.length} of 12 ready` : done.length < 12
-              ? `${shoot.sample ? "Developing your demo" : shoot.generationState === "finished" ? "Shoot finished" : shoot.status === "failed" ? "This shoot needs attention" : "Preparing your photos"} · ${done.length} of 12 ready`
+              ? `${shoot.sample ? "Developing your demo" : shootFailed ? "This shoot needs attention" : shoot.generationState === "finished" ? "Shoot finished" : "Preparing your photos"} · ${done.length} of 12 ready`
               : `${shoot.sample ? "12 sample photo slots" : "12 photos ready"}${reshootUnavailable ? "" : ` · ${shoot.reshootsLeft} reshoots left`}`}
           </p>
         </div>
@@ -1553,20 +1561,20 @@ function Gallery({
         </button>
       </div>
       {!shoot.sample && shoot.deliveryEmail && <p className="delivery-destination">
-        {["sent", "failed", "cancelled"].includes(shoot.emailRequestState || "") ? "Photo delivery email: " : "Your photos will be sent to "}
+        Photo delivery email:{" "}
         <strong>{shoot.deliveryEmail}</strong>
       </p>}
-      <div className="reshoot-guide">
+      {!shootFailed && <div className="reshoot-guide">
         <RotateCcw size={19} aria-hidden="true" />
         <p><strong>3 individual reshoots included.</strong>{" "}
           {reshootPending && !reshooting ? "Checking your reshoot request…" : reshootUnavailable ||
             "Want a different take? Use the reshoot button beneath a photo to create a new version."}
           {reshootDeadline && <span className="reshoot-deadline">Use reshoots by {reshootDeadline}.</span>}</p>
-      </div>
-      {!shoot.sample && shoot.emailRequestState === "failed" && <div className="notice gallery-status" role="status" aria-label="Email delivery update">
+      </div>}
+      {!shoot.sample && emailFailed && <div className="notice gallery-status" role="status" aria-label="Email delivery update">
         <Info size={18} aria-hidden="true" />
         <div>
-          <p><strong>{shoot.emailDeliveryOutcomeUnknown ? "We couldn’t confirm your email delivery." : "We couldn’t deliver your email."}</strong>{" "}
+          <p><strong>{shoot.emailDeliveryOutcomeUnknown && !providerFailed ? "We couldn’t confirm your email delivery." : "We couldn’t deliver your email."}</strong>{" "}
             Your photos are still available here to view and save.</p>
           <div className="notice-actions">
             <button className="button secondary" disabled={!done.length || busy} onClick={() => void download(done)}>
@@ -1609,7 +1617,9 @@ function Gallery({
           reshoots reuse the same image.
         </p>
       </div>}
-      {stopped && done.length < 12 && <div className="notice"><Info size={18} /><p>{shoot.generationState === "paused" ? "Generation is temporarily paused." : "Some photos could not be completed."}{done.length > 0 && " You can still save your available photos."}</p></div>}
+      {stopped && done.length < 12 && <div className="notice"><Info size={18} /><p>{shootFailed
+        ? `Your shoot couldn’t be completed. ${done.length ? `You can still save the ${done.length} ${done.length === 1 ? "photo that is" : "photos that are"} ready. This shoot won’t be emailed.` : "No photos were completed, so there’s no delivery email to wait for."}`
+        : `${shoot.generationState === "paused" ? "Generation is temporarily paused." : "Some photos could not be completed."}${done.length > 0 ? " You can still save your available photos." : ""}`}</p></div>}
       <div className="gallery-toolbar">
         <span>{done.length} of 12 photos ready</span>
         <div>

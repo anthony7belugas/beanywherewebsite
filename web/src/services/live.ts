@@ -29,6 +29,8 @@ export function projectWebJob(job: NativeJobProjection & { id: string }, favorit
     deliveryClosed: job.deliveryClosed === true || !!job.deliveryClosedAt,
     reshootsClosedReason: job.reshootsClosedReason, emailRequestState: job.emailRequestState,
     emailDeliveryOutcomeUnknown: job.emailDeliveryOutcomeUnknown,
+    emailDeliveryFeedback: !job.emailDeliveryFeedbackRequestId || job.emailDeliveryFeedbackRequestId === job.emailLatestRequestId
+      ? job.emailDeliveryFeedback : undefined,
     deliveryEmail: job.deliveryEmail || job.emailRequestTo,
     manualRetriesPerSlot: job.manualRetriesPerSlot ?? 1,
     retriesClosedReason: job.retriesClosedReason, generationLimitReached: job.generationLimitReached,

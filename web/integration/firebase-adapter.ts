@@ -48,6 +48,9 @@ export type NativeJobProjection = {
   reshootsClosedReason?: string;
   emailRequestState?: string;
   emailDeliveryOutcomeUnknown?: boolean;
+  emailDeliveryFeedback?: string;
+  emailDeliveryFeedbackRequestId?: string;
+  emailLatestRequestId?: string;
   emailRequestTo?: string;
   deliveryEmail?: string;
   manualRetriesPerSlot?: number;

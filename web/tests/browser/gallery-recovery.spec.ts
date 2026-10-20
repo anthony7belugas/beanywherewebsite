@@ -29,6 +29,12 @@ async function recoveredGallery(page: Page, emailState = "sent", missing = false
       let connection = 'ready';
       window.setGalleryConnection = value => { connection = value; };
       window.setDeliveryState = value => { job.emailRequestState = value; };
+      window.setDeliveryFeedback = value => { job.emailDeliveryFeedback = value; };
+      window.failShoot = count => {
+        job.status = 'failed'; job.generationState = 'finished'; job.emailRequestState = '';
+        job.slots.forEach((slot, i) => { if (i >= count) { slot.status = 'closed'; delete slot.path; } });
+        job.readableOutputPaths = job.slots.filter(slot => slot.path).map(slot => slot.path);
+      };
       window.setMissingState = (state, attempts = 0) => {
         job.generationState = state;
         job.slots[11].manualAttempts = attempts;
@@ -154,4 +160,32 @@ test("automatic attempts finish before manual retry is offered, and spent retrie
   await expect(tile).toContainText("Couldn’t finish this photo");
   await expect(tile.locator(".spin")).toHaveCount(0);
   await expect(tile.getByRole("button", { name: /Retry .*for free/ })).toHaveCount(0);
+});
+
+test("a later email bounce shows the delivery warning without removing photos or reshoots", async ({ page }) => {
+  await recoveredGallery(page);
+  await page.evaluate(() => {
+    Reflect.get(window, "setDeliveryFeedback")("bounced");
+    window.dispatchEvent(new Event("focus"));
+  });
+  await expect(page.getByRole("status", { name: "Email delivery update" })).toContainText("We couldn’t deliver your email.");
+  await expect(page.locator(".gallery-toolbar")).toContainText("12 of 12");
+  await expect(page.getByRole("button", { name: "Reshoot s0", exact: true })).toBeEnabled();
+});
+
+for (const count of [0, 5]) test(`a failed ${count}-photo shoot never promises a delivery email`, async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await recoveredGallery(page);
+  await page.evaluate(count => {
+    Reflect.get(window, "failShoot")(count);
+    window.dispatchEvent(new Event("focus"));
+  }, count);
+  await expect(page.locator(".lead")).toContainText(`This shoot needs attention · ${count} of 12 ready`);
+  await expect(page.locator(".gallery")).toContainText("Your shoot couldn’t be completed.");
+  await expect(page.locator(".gallery")).toContainText(count ? "This shoot won’t be emailed." : "no delivery email to wait for");
+  await expect(page.locator(".gallery")).not.toContainText("Your photos will be sent");
+  await expect(page.locator(".progress-panel")).toHaveCount(0);
+  await expect(page.locator(".reshoot-guide")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Retry .*for free/ })).toHaveCount(0);
+  if (!count) await expect(page.locator(".section-heading button")).toBeDisabled();
 });

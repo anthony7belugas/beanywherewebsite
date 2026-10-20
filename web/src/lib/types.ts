@@ -71,6 +71,7 @@ export type Shoot = {
   reshootsClosedReason?: string;
   emailRequestState?: string;
   emailDeliveryOutcomeUnknown?: boolean;
+  emailDeliveryFeedback?: string;
   deliveryEmail?: string;
   manualRetriesPerSlot?: number;
   retriesClosedReason?: string;
