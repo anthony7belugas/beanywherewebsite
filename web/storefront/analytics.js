@@ -7,13 +7,13 @@ import {
   directAttribution,
 } from "./acquisition.js";
 export const MEASUREMENT_ID = "G-2VT9EWH1B5";
-export const ANALYTICS_VERSION = "web-20261020-3";
+export const ANALYTICS_VERSION = "web-20261020-4";
 const KEY = "beanywhere-measurement-v1";
 const CHOICE = "beanywhere-analytics-choice";
 const TIMEOUT = 30 * 60000;
 const YEAR = 365 * 86400000;
 const EVENTS = new Set(
-  "page_view view_item_list view_item select_item cta_clicked styling_selected style_direction_selected faq_opened scroll_depth engagement_tick web_vital web_error pack_opened screen_view upload_screen_viewed reference_selection_started reference_selection_completed reference_selection_failed upload_started upload_completed upload_failed consent_completed checkout_viewed begin_checkout purchase_initiated checkout_error payment_return purchase_status library_viewed library_failed gallery_opened gallery_lookup_started gallery_lookup_completed gallery_lookup_failed delivery_email_submitted delivery_email_changed results_revealed results_completed download_started photo_saved save_all download_failed save_all_partial reshoot_requested reshoot_accepted reshoot_failed slot_retry support_opened instagram_opened outbound_clicked privacy_opened".split(
+  "page_view view_item_list view_item select_item cta_clicked styling_selected style_direction_selected faq_opened scroll_depth engagement_tick web_vital web_error pack_opened screen_view upload_screen_viewed reference_selection_started reference_selection_completed reference_selection_failed upload_started upload_completed upload_failed consent_completed checkout_viewed begin_checkout purchase_initiated purchase_failed checkout_error payment_return purchase_status library_viewed library_failed gallery_opened gallery_lookup_started gallery_lookup_completed gallery_lookup_failed delivery_email_submitted delivery_email_changed results_revealed results_completed download_started photo_saved save_all download_failed save_all_partial reshoot_requested reshoot_accepted reshoot_failed slot_retry support_opened instagram_opened outbound_clicked privacy_opened".split(
     " ",
   ),
 );
@@ -153,6 +153,9 @@ let memory,
   initialized = false,
   loaded = false,
   configuredSession = "",
+  configuredPage = "",
+  configuredReferrer = "",
+  pageReferrer = null,
   lastPage = "",
   lastPageSession = "",
   arrivalUsed = false,
@@ -278,9 +281,11 @@ function load() {
   };
   document.head.append(script);
 }
-function configureSession(state) {
+function configureSession(state, pagePath = safePage(window.location.href), referrer = pageReferrer ?? safeReferrer()) {
   const session = state.sessionAttribution || directAttribution();
   configuredSession = state.sessionId;
+  configuredPage = pagePath;
+  configuredReferrer = referrer;
   gtag("config", MEASUREMENT_ID, {
     send_page_view: false,
     client_id: state.clientId,
@@ -288,9 +293,9 @@ function configureSession(state) {
     allow_google_signals: false,
     allow_ad_personalization_signals: false,
     cookie_expires: 365 * 86400,
-    page_location: "https://beanywhere.app" + safePage(window.location.href),
-    page_title: "BeAnywhere " + safePage(window.location.href),
-    page_referrer: safeReferrer(),
+    page_location: "https://beanywhere.app" + pagePath,
+    page_title: "BeAnywhere " + pagePath,
+    page_referrer: referrer,
     ignore_referrer: /(^|\.)stripe\.com$/.test(referrerHost()),
     // These defaults also cover Google's automatic session/engagement events.
     is_test: testTraffic() ? 1 : 0,
@@ -319,6 +324,11 @@ function safeReferrer() {
     : "";
 }
 export function trackWeb(name, params = {}, eventId = crypto.randomUUID()) {
+  emitWeb(name, params, eventId);
+}
+// Only the timer supplies a prior-page snapshot. Event callers cannot override
+// safe URLs or attach arbitrary metadata to an event.
+function emitWeb(name, params, eventId = crypto.randomUUID(), snapshot) {
   if (!EVENTS.has(name)) return;
   if (!initialized) {
     if (starting && analyticsPreference() !== false && earlyEvents.length < 100)
@@ -332,17 +342,24 @@ export function trackWeb(name, params = {}, eventId = crypto.randomUUID()) {
       (document.visibilityState === "visible" || name === "engagement_tick") }),
       last = currentAttribution(),
       session = state.sessionAttribution || directAttribution();
-    if (configuredSession !== state.sessionId) configureSession(state);
-    const pagePath = safePage(window.location.href);
+    const pagePath = snapshot?.pagePath ?? safePage(window.location.href);
     if (name === "page_view" && lastPage === pagePath && lastPageSession === state.sessionId)
       return;
+    const startsPage = name === "page_view" || (!snapshot &&
+      lastPageSession !== state.sessionId && document.visibilityState === "visible");
+    let referrer = snapshot?.referrer ?? pageReferrer ?? safeReferrer();
+    if (!snapshot && lastPage && lastPage !== pagePath) referrer = "https://beanywhere.app" + lastPage;
+    else if (startsPage && lastPageSession && lastPageSession !== state.sessionId) referrer = "";
+    if (startsPage) pageReferrer = referrer;
+    if (!snapshot && (configuredSession !== state.sessionId || configuredPage !== pagePath || configuredReferrer !== referrer))
+      configureSession(state, pagePath, referrer);
     const values = {
       event_id: eventId,
       session_id: state.gaSessionId,
       release: ANALYTICS_VERSION,
       page_location: "https://beanywhere.app" + pagePath,
       page_title: "BeAnywhere " + pagePath,
-      page_referrer: safeReferrer(),
+      page_referrer: referrer,
       source: last.source,
       medium: last.medium,
       campaign: last.campaign,
@@ -356,8 +373,7 @@ export function trackWeb(name, params = {}, eventId = crypto.randomUUID()) {
       session_campaign: session.campaign,
       is_test: testTraffic() ? 1 : 0,
     };
-    if (name === "page_view" ||
-        (lastPageSession !== state.sessionId && document.visibilityState === "visible")) {
+    if (startsPage) {
       lastPage = pagePath;
       lastPageSession = state.sessionId;
       depths.clear();
@@ -465,15 +481,16 @@ function startAnalytics() {
   window["ga-disable-" + MEASUREMENT_ID] = !analyticsAllowed();
   let measuring = analyticsAllowed();
   let cachedPage = false;
-  let focusedAt =
-    measuring && document.visibilityState === "visible" ? performance.now() : 0;
-  const engagement = () => {
+  const inFocus = () => document.visibilityState === "visible" && document.hasFocus();
+  let focusedAt = measuring && inFocus() ? performance.now() : null;
+  const engagement = (resume = true) => {
     const now = performance.now();
-    if (focusedAt && document.visibilityState === "visible")
-      trackWeb("engagement_tick", {
-        durationMs: Math.min(30000, now - focusedAt),
-      });
-    focusedAt = analyticsAllowed() && document.visibilityState === "visible" ? now : 0;
+    if (focusedAt !== null && analyticsAllowed() && lastPage) {
+      const durationMs = Math.min(30000, Math.max(0, now - focusedAt));
+      if (durationMs > 0) emitWeb("engagement_tick", { durationMs }, undefined,
+        { pagePath: lastPage, referrer: pageReferrer });
+    }
+    focusedAt = resume && analyticsAllowed() && inFocus() ? now : null;
   };
   const page = () => {
     if (!analyticsAllowed()) return;
@@ -491,7 +508,7 @@ function startAnalytics() {
     measuring = allowed;
     // Start a measured visit when collection begins; never include the earlier
     // opted-out interval in engagement or silently skip this page's funnel entry.
-    focusedAt = allowed && document.visibilityState === "visible" ? performance.now() : 0;
+    focusedAt = allowed && inFocus() ? performance.now() : null;
     lastPage = "";
     if (allowed) page();
   });
@@ -502,31 +519,25 @@ function startAnalytics() {
     queueStudioEvent(event.name, event.params, event.eventId);
   window.dispatchEvent(new Event("beanywhere-analytics-choice"));
   window.addEventListener("hashchange", page);
+  const resume = () => {
+    if (focusedAt === null && analyticsAllowed() && inFocus()) focusedAt = performance.now();
+    if (!cachedPage) page();
+    void flushEvents();
+  };
+  window.addEventListener("blur", () => engagement(false));
+  window.addEventListener("focus", resume);
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden") {
-      if (focusedAt)
-        trackWeb("engagement_tick", {
-          durationMs: Math.min(30000, performance.now() - focusedAt),
-        });
-      focusedAt = 0;
-    } else {
-      focusedAt = analyticsAllowed() ? performance.now() : 0;
-      if (!cachedPage) page();
-      void flushEvents();
-    }
+    if (document.visibilityState === "hidden") engagement(false);
+    else resume();
   });
   window.addEventListener("pagehide", (event) => {
     cachedPage = event.persisted;
-    if (focusedAt)
-      trackWeb("engagement_tick", {
-        durationMs: Math.min(30000, performance.now() - focusedAt),
-      });
-    focusedAt = 0;
+    engagement(false);
   });
   window.addEventListener("pageshow", (event) => {
     if (!event.persisted) return;
     cachedPage = false;
-    focusedAt = analyticsAllowed() && document.visibilityState === "visible" ? performance.now() : 0;
+    focusedAt = analyticsAllowed() && inFocus() ? performance.now() : null;
     lastPage = "";
     page();
     void flushEvents();

@@ -305,3 +305,115 @@ test("two tabs share a browser and session and apply withdrawal across both tabs
   await page.getByRole("button", { name: "Men’s styling", exact: true }).click();
   expect((await records(page)).filter(row => row[0] === "event")).toHaveLength(count);
 });
+
+const ticks = async (page: Page) => (await records(page))
+  .filter(row => row[0] === "event" && row[1] === "engagement_tick")
+  .map(row => row[2] as Record<string, string | number>);
+async function virtualPage(page: Page, hash: string) {
+  await page.evaluate(hash => {
+    history.replaceState(null, "", "/studio/" + hash);
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+  }, hash);
+}
+async function focusState(page: Page, focused: boolean) {
+  await page.evaluate(focused => {
+    Object.defineProperty(document, "hasFocus", { configurable: true, value: () => focused });
+    window.dispatchEvent(new Event(focused ? "focus" : "blur"));
+  }, focused);
+}
+
+test("screen changes keep elapsed time on the screen just left and update safe navigation metadata", async ({ page }) => {
+  await page.clock.install();
+  await setup(page);
+  await page.goto("/");
+  await expect.poll(async () => (await pageViews(page)).length).toBe(1);
+  await virtualPage(page, "#/upload");
+  await page.clock.runFor(5000);
+  await virtualPage(page, "#/checkout/private-order?email=private@example.com");
+  const elapsed = (await ticks(page)).filter(row => Number(row.duration_ms) >= 4900);
+  expect(elapsed).toHaveLength(1);
+  expect(elapsed[0].page_location).toBe("https://beanywhere.app/studio/upload");
+  expect((await pageViews(page)).at(-1)).toMatchObject({
+    page_location: "https://beanywhere.app/studio/checkout",
+    page_referrer: "https://beanywhere.app/studio/upload",
+  });
+  const config = (await records(page)).filter(row => row[0] === "config").at(-1)?.[2];
+  expect(config).toMatchObject({
+    page_location: "https://beanywhere.app/studio/checkout",
+    page_referrer: "https://beanywhere.app/studio/upload", send_page_view: false,
+  });
+  expect(JSON.stringify(await records(page))).not.toContain("private-order");
+  expect(JSON.stringify(await records(page))).not.toContain("private@example.com");
+});
+
+test("a visible but unfocused window pauses engagement and can start a returning session", async ({ page }) => {
+  await page.clock.install();
+  await setup(page);
+  await page.goto("/?utm_source=google&utm_medium=cpc", { referer: "https://www.google.com/search?private=query" });
+  await expect.poll(async () => (await pageViews(page)).length).toBe(1);
+  expect((await pageViews(page))[0].page_referrer).toBe("https://www.google.com/");
+  await focusState(page, true);
+  await page.clock.runFor(5000);
+  await focusState(page, false);
+  const before = await ticks(page);
+  expect(before.some(row => Number(row.duration_ms) >= 4900)).toBe(true);
+  const state = await page.evaluate(() => JSON.parse(localStorage.getItem("beanywhere-measurement-v1")!));
+  await page.clock.runFor(31 * 60000);
+  expect(await ticks(page)).toEqual(before);
+  const inactive = await page.evaluate(() => JSON.parse(localStorage.getItem("beanywhere-measurement-v1")!));
+  expect(inactive.lastActiveAtMs).toBe(state.lastActiveAtMs);
+  await focusState(page, true);
+  await expect.poll(async () => (await pageViews(page)).length).toBe(2);
+  const returned = await page.evaluate(() => JSON.parse(localStorage.getItem("beanywhere-measurement-v1")!));
+  expect(returned.clientId).toBe(state.clientId);
+  expect(returned.sessionId).not.toBe(state.sessionId);
+  expect((await pageViews(page)).at(-1)).toMatchObject({ session_source: "direct", page_referrer: "" });
+  await page.clock.runFor(30000);
+  await focusState(page, false);
+  const elapsed = (await ticks(page)).slice(before.length).reduce((sum, row) => sum + Number(row.duration_ms), 0);
+  expect(elapsed).toBeGreaterThanOrEqual(29900);
+  expect(elapsed).toBeLessThan(30500);
+});
+
+test("a checkout failure reaches web analytics without becoming a purchase", async ({ page }) => {
+  await setup(page);
+  await page.goto("/");
+  await expect.poll(async () => (await pageViews(page)).length).toBe(1);
+  await page.evaluate(async () => {
+    const link = performance.getEntriesByType("resource").find(entry => new URL(entry.name).pathname === "/analytics.js")!.name;
+    const analytics = await import(/* @vite-ignore */ link);
+    analytics.trackWeb("purchase_failed", { packId: "paris", reason: "unknown", email: "private@example.com" });
+    analytics.trackWeb("purchase_completed", { value: 3.99 });
+  });
+  const events = (await records(page)).filter(row => row[0] === "event");
+  expect(events.filter(row => row[1] === "purchase_failed")).toHaveLength(1);
+  expect(events.find(row => row[1] === "purchase_failed")?.[2]).toMatchObject({ pack_id: "paris", error_code: "unknown" });
+  expect(events.filter(row => row[1] === "purchase" || row[1] === "purchase_completed")).toHaveLength(0);
+  expect(JSON.stringify(events)).not.toContain("private@example.com");
+});
+
+
+test("blur, hide and pagehide do not count the same interval twice", async ({ page }) => {
+  await page.clock.install();
+  await setup(page);
+  await page.goto("/");
+  await expect.poll(async () => (await pageViews(page)).length).toBe(1);
+  await focusState(page, true);
+  await page.clock.runFor(5000);
+  await focusState(page, false);
+  await visibility(page, "hidden");
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true })));
+  const first = await ticks(page);
+  await page.clock.runFor(120000);
+  expect(await ticks(page)).toEqual(first);
+  await visibility(page, "visible");
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })));
+  await focusState(page, true);
+  await page.clock.runFor(2000);
+  await visibility(page, "hidden");
+  await focusState(page, false);
+  const elapsed = (await ticks(page)).reduce((sum, row) => sum + Number(row.duration_ms), 0);
+  expect(elapsed).toBeGreaterThanOrEqual(6900);
+  expect(elapsed).toBeLessThan(7500);
+  expect(await pageViews(page)).toHaveLength(2);
+});

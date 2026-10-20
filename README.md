@@ -1,13 +1,15 @@
 # BeAnywhere — site
 
-Static marketing, support and legal site for **BeAnywhere**, served at **https://beanywhere.app**.
-Four pages, no framework or deployment build step: `index.html`, `support.html`, `privacy.html`, `terms.html`.
+Public photoshoot catalog, Web Studio, support and legal site for **BeAnywhere**, served at **https://beanywhere.app**.
+The public pages are generated from the shared catalog; the React Web Studio is built into `studio/`. See [DEVELOPMENT.md](DEVELOPMENT.md) for the current build, test and publishing workflow.
 
 ## Files
 
 | File | What it is |
 |---|---|
-| `index.html` | Android launch landing page with direct Google Play download links. |
+| `index.html` and `shoots/` | Generated homepage and six public photoshoot detail pages. |
+| `web/` | Studio source, shared website analytics, catalog, tests and build scripts. |
+| `studio/` | Compiled production Web Studio. Commit it with the source changes. |
 | `support.html` | iPhone/Android help and account deletion by app or email, served at `/support`. |
 | `privacy.html` | Privacy Policy — generated; edit `legal-data.mjs` instead. |
 | `terms.html` | Terms of Service — generated; edit `legal-data.mjs` instead. |
@@ -72,7 +74,7 @@ with their original license in `assets/fonts/Fraunces-LICENSE.txt`.
 
 All download buttons point to `com.besties.photo` on Google Play. The displayed
 $3.99 USD pack price is the US listing price; local pricing appears in the app.
-No email collection, tracking service, or additional backend is added.
+The Web Studio uses the existing Firebase backend for photo delivery and payment. Website analytics measures browsing and server-confirmed outcomes; Usage settings controls optional collection. Raw email addresses and photos are excluded from Google Analytics. Website releases are separate from native app releases.
 
 When changing `landing.css`, update the `?v=` value in the homepage stylesheet
 link to the first 10 characters of the file's SHA-256. This makes returning
