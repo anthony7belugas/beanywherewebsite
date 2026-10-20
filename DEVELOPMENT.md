@@ -14,4 +14,9 @@ Example tracked link:
 
 Use a different `utm_content` or `source_code` for each placement. Confirmed sales appear in the owner dashboard under **Web sales by source**, separately from mobile sales. Untracked traffic remains direct; old purchases do not gain invented source labels.
 
-Delivery emails link to `/studio/#/gallery/{jobId}`. The gallery route preserves that destination through checkout-email recovery on another browser. Completed galleries keep downloads and favorites prominent, explain the included reshoots, and show one next-shoot suggestion below the photos, preferring a setting absent from the loaded library. Incomplete galleries do not show the suggestion.
+Delivery emails link to `/studio/#/gallery/{jobId}`. The gallery route preserves that destination through photo-delivery-email recovery on another browser. Completed galleries keep photo selection and downloads prominent, explain the included reshoots, and show one next-shoot suggestion below the photos, preferring a setting absent from the loaded library. Incomplete galleries do not show the suggestion.
+
+
+The October 19 finishing pass removes favorites controls, leads the shoot pages with six previews and “12 photos total · 2 per scene,” and clarifies the editable photo delivery email before payment. Missing photos offer a free manual retry after automatic work ends; retries preserve the three reshoots and update the website gallery without creating a follow-up email. Deploy the backend’s `retrySlot`, `recoverWebGalleries`, and `listWebGalleries` before this website revision. Existing email lookup and remembered-browser access remain in place.
+
+Validation for this pass: 237 frontend tests, 58 Chromium/WebKit browser checks, all 255 backend release checks, and desktop/390px/320px visual review. Payment, generation, and delivery edge cases use isolated fixtures; this pass does not charge a real card or generate a customer shoot.
