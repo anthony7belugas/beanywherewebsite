@@ -1,6 +1,20 @@
 import { build } from 'esbuild';
+import { createHash } from 'node:crypto';
 import { readFile, writeFile, mkdir, copyFile } from 'node:fs/promises';
 const root = new URL('../../', import.meta.url);
+// Version every script dependency by its contents. A new release must not mix
+// new HTML with an older cached measurement or attribution module.
+const revision = bytes => createHash('sha256').update(bytes).digest('hex').slice(0,16);
+await build({entryPoints:[new URL('../storefront/analytics.js',import.meta.url).pathname],bundle:true,format:'esm',minify:true,outfile:new URL('analytics.js',root).pathname});
+await copyFile(new URL('../storefront/acquisition.js',import.meta.url),new URL('acquisition.js',root));
+let storefront = await readFile(new URL('../storefront/storefront.js',import.meta.url),'utf8');
+for (const name of ['analytics','acquisition']) {
+  const version = revision(await readFile(new URL(`${name}.js`,root)));
+  storefront = storefront.replace(`'./${name}.js'`,`'./${name}.js?v=${version}'`);
+}
+await writeFile(new URL('storefront.js',root),storefront);
+const storefrontVersion = revision(storefront);
+
 const packs = JSON.parse(await readFile(new URL('../src/lib/catalog.json', import.meta.url), 'utf8'));
 const esc = value => String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const cover = (pack, styling = 'w') => `/studio/assets/covers/${pack.packId}-${styling}.webp`;
@@ -8,7 +22,7 @@ const header = `<a class="skip-link" href="#main">Skip to content</a><header cla
 const footer = `<footer class="site-footer site-width"><div><a class="wordmark" href="/">BeAnywhere</a><p>© 2026 Besties, Inc. · Ages 18+</p></div><nav aria-label="Support and apps"><a href="https://play.google.com/store/apps/details?id=com.besties.photo">Get the Android app ↗</a><a href="/support">Support</a><a href="/privacy">Privacy</a><button type="button" data-analytics-settings>Usage settings</button><a href="/terms">Terms</a><a href="https://www.instagram.com/beanywhere.app/">Instagram</a></nav></footer>`;
 const toggle = `<div class="styling-toggle" role="group" aria-label="Wardrobe styling"><button type="button" data-styling="w" aria-pressed="true">Women’s styling</button><button type="button" data-styling="m" aria-pressed="false">Men’s styling</button></div>`;
 function page({ title, description, path, image, body, packId = '' }) {
- return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="index,follow"><meta name="theme-color" content="#15110e"><title>${esc(title)}</title><meta name="description" content="${esc(description)}"><link rel="canonical" href="https://beanywhere.app${path}"><meta property="og:type" content="website"><meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(description)}"><meta property="og:url" content="https://beanywhere.app${path}"><meta property="og:image" content="https://beanywhere.app${image}"><meta name="twitter:card" content="summary_large_image"><link rel="icon" href="/icon.png" type="image/png"><link rel="apple-touch-icon" href="/icon.png"><link rel="preload" href="/assets/fonts/fraunces-semibold.ttf" as="font" type="font/ttf" crossorigin><link rel="stylesheet" href="/storefront.css?v=5"></head><body ${packId ? `data-shoot="${packId}"` : ''}>${header}<main id="main" class="site-width">${body}</main>${footer}<script type="module" src="/storefront.js?v=6"></script></body></html>\n`;
+ return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="index,follow"><meta name="theme-color" content="#15110e"><title>${esc(title)}</title><meta name="description" content="${esc(description)}"><link rel="canonical" href="https://beanywhere.app${path}"><meta property="og:type" content="website"><meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(description)}"><meta property="og:url" content="https://beanywhere.app${path}"><meta property="og:image" content="https://beanywhere.app${image}"><meta name="twitter:card" content="summary_large_image"><link rel="icon" href="/icon.png" type="image/png"><link rel="apple-touch-icon" href="/icon.png"><link rel="preload" href="/assets/fonts/fraunces-semibold.ttf" as="font" type="font/ttf" crossorigin><link rel="stylesheet" href="/storefront.css?v=5"></head><body ${packId ? `data-shoot="${packId}"` : ''}>${header}<main id="main" class="site-width">${body}</main>${footer}<script type="module" src="/storefront.js?v=${storefrontVersion}"></script></body></html>\n`;
 }
 const cards = packs.map((p,i) => `<a class="shoot-card" data-shoot-link="${p.packId}" href="/shoots/${p.packId}/"><div class="card-heading"><h3>${esc(p.title)}</h3><span>$3.99</span></div><img data-cover="${p.packId}" src="${cover(p)}" alt="${esc(p.title)} — women’s styling preview" width="720" height="960" loading="${i < 3 ? 'eager' : 'lazy'}"><p>${esc(p.tagline)}</p></a>`).join('\n');
 await writeFile(new URL('index.html', root), page({title:'BeAnywhere — Your next photoshoot.',description:'You, somewhere extraordinary. Choose your setting and add your selfies. Create 12 photos online for $3.99, or get BeAnywhere on Google Play.',path:'/',image:'/assets/play-feature.jpg',body:`
@@ -35,10 +49,6 @@ for (const p of packs) {
  await writeFile(new URL(`shoots/${p.packId}/index.html`,root),page({title:`${p.title} Photoshoot — BeAnywhere`,description:`${p.tagline} Create your ${p.title} photoshoot from 4–6 selfies. $3.99 USD for 12 photos and 3 reshoots.`,path:`/shoots/${p.packId}/`,image:cover(p),body,packId:p.packId}));
 }
 await copyFile(new URL('../storefront/storefront.css',import.meta.url),new URL('storefront.css',root));
-await copyFile(new URL('../storefront/storefront.js',import.meta.url),new URL('storefront.js',root));
+
 await writeFile(new URL('sitemap.xml',root),`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${['/',...packs.map(p=>`/shoots/${p.packId}/`),'/support','/privacy','/terms'].map(path=>`<url><loc>https://beanywhere.app${path}</loc></url>`).join('')}</urlset>\n`);
 console.log('Built public homepage and six searchable shoot pages from the shared catalog.');
-
-await copyFile(new URL('../storefront/acquisition.js', import.meta.url), new URL('acquisition.js', root));
-
-await build({entryPoints:[new URL('../storefront/analytics.js',import.meta.url).pathname],bundle:true,format:'esm',minify:true,outfile:new URL('analytics.js',root).pathname});

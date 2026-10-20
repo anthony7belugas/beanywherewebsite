@@ -1,5 +1,5 @@
-import { initAnalytics, trackWeb, analyticsAllowed, setAnalyticsAllowed } from './analytics.js';
-import { currentAttribution, attributedLink } from './acquisition.js';
+import { initAnalytics, trackWeb, analyticsAllowed, setAnalyticsAllowed } from './analytics.js?v=cdf34af69052e4ca';
+import { currentAttribution, attributedLink } from './acquisition.js?v=ce2e5c5a7a507681';
 /* The public catalog works before browser sign-in. Only fixed catalog choices enter the studio. */
 (() => {
   currentAttribution();

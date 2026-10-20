@@ -171,8 +171,19 @@ test("enabling measurement records the current page once without counting opted-
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect.poll(async () => (await records(page)).filter(row => row[0] === "event" && row[1] === "page_view").length).toBe(1);
   for (const row of (await records(page)).filter(row => row[0] === "event" && row[1] === "engagement_tick"))
-    expect((row[2] as { engagement_time_msec: number }).engagement_time_msec).toBeLessThan(1000);
+    expect((row[2] as { duration_ms: number }).duration_ms).toBeLessThan(1000);
   await page.getByRole("button", { name: "Usage settings" }).click();
   await page.getByRole("button", { name: "Save", exact: true }).click();
   expect((await records(page)).filter(row => row[0] === "event" && row[1] === "page_view")).toHaveLength(1);
+});
+
+test("visible-page timing stays separate from Google's automatic engagement clock", async ({ page }) => {
+  await page.clock.install();
+  await setup(page);
+  await page.goto("/");
+  await expect.poll(async () => JSON.stringify(await records(page))).toContain("page_view");
+  await page.clock.runFor(30000);
+  const ticks = (await records(page)).filter(row => row[0] === "event" && row[1] === "engagement_tick");
+  expect(ticks.some(row => (row[2] as { duration_ms: number }).duration_ms >= 29000)).toBe(true);
+  for (const row of ticks) expect(row[2]).not.toHaveProperty("engagement_time_msec");
 });

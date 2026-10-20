@@ -7,7 +7,7 @@ import {
   directAttribution,
 } from "./acquisition.js";
 export const MEASUREMENT_ID = "G-2VT9EWH1B5";
-export const ANALYTICS_VERSION = "web-20261020-1";
+export const ANALYTICS_VERSION = "web-20261020-2";
 const KEY = "beanywhere-measurement-v1";
 const CHOICE = "beanywhere-analytics-choice";
 const TIMEOUT = 30 * 60000;
@@ -51,7 +51,7 @@ export function safeParams(input = {}) {
       value >= 0 &&
       value <= 1e9
     )
-      out[name] = value;
+      out[name] = name === "duration_ms" ? Math.round(value) : value;
     else if (
       ["restored", "reused_refs", "is_test"].includes(name) &&
       typeof value === "boolean"
@@ -342,8 +342,8 @@ export function trackWeb(name, params = {}, eventId = crypto.randomUUID()) {
       session_campaign: session.campaign,
       is_test: testTraffic() ? 1 : 0,
     };
-    if (name === "engagement_tick")
-      values.engagement_time_msec = Math.round(Number(params.durationMs) || 0);
+    // Google maintains engagement_time_msec itself. Our visible-page timer uses
+    // duration_ms so it cannot add the same interval to Google's clock twice.
     gtag("event", name, values);
   } catch {
     /* Measurement must never stop the product. */
