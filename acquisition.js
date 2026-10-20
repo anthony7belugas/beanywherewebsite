@@ -66,10 +66,14 @@ export function currentAttribution() {
   return visit;
 }
 export function attributedLink(href, attribution = currentAttribution()) {
-  if (attribution.source === 'direct') return href;
   const url = new URL(href, 'https://beanywhere.app');
   if (url.origin !== 'https://beanywhere.app') return href;
-  for (const [key, param] of Object.entries(fields)) if (label(attribution[key])) url.searchParams.set(param, label(attribution[key]));
-  if (attribution.capturedAt) url.searchParams.set('ba_at', String(attribution.capturedAt));
+  // Links may already carry an older visit. Replace the whole tuple, including
+  // empty labels and the legacy referral alias, so two campaigns cannot mix.
+  for (const param of [...Object.values(fields), 'ref', 'ba_at']) url.searchParams.delete(param);
+  if (attribution.source !== 'direct') {
+    for (const [key, param] of Object.entries(fields)) if (label(attribution[key])) url.searchParams.set(param, label(attribution[key]));
+    if (attribution.capturedAt) url.searchParams.set('ba_at', String(attribution.capturedAt));
+  }
   return url.pathname + url.search + url.hash;
 }

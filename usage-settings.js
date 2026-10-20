@@ -1,4 +1,4 @@
-import { analyticsAllowed, setAnalyticsAllowed } from './analytics.js?v=4bf11ae83ea1fd48';
+import { analyticsAllowed, setAnalyticsAllowed } from './analytics.js?v=590f078b49ed9f53';
 
 export function bindUsageSettings() {
   document.querySelectorAll('[data-analytics-settings]').forEach(button => button.addEventListener('click', () => {

@@ -1,6 +1,6 @@
-import { bindUsageSettings } from './usage-settings.js?v=e9aad33b4a4fd2d2';
-import { initAnalytics, trackWeb } from './analytics.js?v=4bf11ae83ea1fd48';
-import { currentAttribution, attributedLink } from './acquisition.js?v=1f2707824e699212';
+import { bindUsageSettings } from './usage-settings.js?v=88c1ead576415cb0';
+import { initAnalytics, trackWeb } from './analytics.js?v=590f078b49ed9f53';
+import { currentAttribution, attributedLink } from './acquisition.js?v=75c8d0f7a609bd01';
 /* The public catalog works before browser sign-in. Only fixed catalog choices enter the studio. */
 (() => {
   currentAttribution();
@@ -36,8 +36,10 @@ import { currentAttribution, attributedLink } from './acquisition.js?v=1f2707824
       const href = link.getAttribute('href');
       if (!href || href.startsWith('#')) return;
       const url = new URL(href, location.href);
-      if (url.origin !== location.origin || !/^\/(?:$|studio(?:\/|$)|shoots\/)/.test(url.pathname)) return;
-      url.searchParams.set('styling', styling);
+      if (url.origin !== location.origin) return;
+      const catalog = /^\/(?:$|studio(?:\/|$)|shoots\/)/.test(url.pathname);
+      if (!catalog && !/^\/(?:support|privacy|terms)(?:\.html)?\/?$/.test(url.pathname)) return;
+      if (catalog) url.searchParams.set('styling', styling);
       link.href = attributedLink(url.pathname + url.search + url.hash);
     });
   }
@@ -49,6 +51,8 @@ import { currentAttribution, attributedLink } from './acquisition.js?v=1f2707824
   }));
   looks.forEach(button => button.addEventListener('click', () => { look = button.dataset.look; trackWeb('style_direction_selected',{packId:pack,styling,styleId:look}); render(); }));
   render();
+  window.addEventListener('pageshow', render);
+  window.addEventListener('storage', event => { if (event.key === 'beanywhere-acquisition-v1') render(); });
   trackWeb(pack ? 'view_item' : 'view_item_list',{packId:pack,styling,styleId:look});
   const observer=new IntersectionObserver(entries=>{for(const entry of entries)if(entry.isIntersecting){trackWeb('view_item',{packId:entry.target.dataset.shootLink,styling,surface:'card'});observer.unobserve(entry.target);}},{threshold:0.5});
   document.querySelectorAll('[data-shoot-link]').forEach(card=>observer.observe(card));

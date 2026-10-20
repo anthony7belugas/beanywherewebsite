@@ -46,6 +46,23 @@ it('does not let an older internal link overwrite a newer identifiable visit', (
   expect(captureAttribution({ url: `https://beanywhere.app${link}`, storage, now: now + 20000 })).toEqual(recent);
   expect(captureAttribution({ url: 'https://beanywhere.app/', storage, now: now + 30000 })).toEqual(recent);
 });
+it('replaces the complete campaign tuple when refreshing an already tagged internal link', () => {
+  const old = captureAttribution({ url: 'https://beanywhere.app/?utm_source=google&utm_medium=cpc&utm_campaign=old_campaign&utm_content=old_post&ref=old_code', now });
+  const href = attributedLink('/studio/?start=paris&ref=old_code#/upload', old);
+  const recent = captureAttribution({ url: 'https://beanywhere.app/?utm_source=instagram&utm_medium=social', now: now + 1000 });
+  const refreshed = attributedLink(href, recent);
+  expect(captureAttribution({ url: `https://beanywhere.app${refreshed}`, now: now + 2000 })).toEqual(recent);
+  expect(refreshed).toContain('start=paris');
+  expect(refreshed).toContain('#/upload');
+  for (const field of ['utm_campaign', 'utm_content', 'source_code', 'ref'])
+    expect(new URL(refreshed, 'https://beanywhere.app').searchParams.has(field)).toBe(false);
+});
+it('removes old transfer labels when campaign credit expires without changing external links', () => {
+  const href = '/studio/?styling=m&utm_source=google&utm_campaign=old&ref=old_code&ba_at=123#/library';
+  expect(attributedLink(href, directAttribution())).toBe('/studio/?styling=m#/library');
+  const external = 'https://outside.example/?utm_source=partner&ref=invitation';
+  expect(attributedLink(external, directAttribution())).toBe(external);
+});
 it('an open tab picks up newer campaign credit and expires credit without renewing its original URL', async () => {
   vi.resetModules();
   vi.useFakeTimers();

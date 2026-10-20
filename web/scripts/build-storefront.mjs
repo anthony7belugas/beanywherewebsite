@@ -5,8 +5,13 @@ const root = new URL('../../', import.meta.url);
 // Version every script dependency by its contents. A new release must not mix
 // new HTML with an older cached measurement or attribution module.
 const revision = bytes => createHash('sha256').update(bytes).digest('hex').slice(0,16);
-await build({entryPoints:[new URL('../storefront/analytics.js',import.meta.url).pathname],bundle:true,format:'esm',minify:true,outfile:new URL('analytics.js',root).pathname});
 await copyFile(new URL('../storefront/acquisition.js',import.meta.url),new URL('acquisition.js',root));
+// Navigation and measurement must use one acquisition module per page. Bundling
+// a second copy would recapture the same arrival after the policy fetch finishes.
+await build({entryPoints:[new URL('../storefront/analytics.js',import.meta.url).pathname],bundle:true,format:'esm',minify:true,external:['./acquisition.js'],outfile:new URL('analytics.js',root).pathname});
+const acquisitionVersion = revision(await readFile(new URL('acquisition.js',root)));
+const analytics = await readFile(new URL('analytics.js',root),'utf8');
+await writeFile(new URL('analytics.js',root),analytics.replaceAll('"./acquisition.js"',`"./acquisition.js?v=${acquisitionVersion}"`));
 async function versionedScript(name, dependencies) {
   let source = await readFile(new URL(`../storefront/${name}.js`,import.meta.url),'utf8');
   for (const dependency of dependencies) {
