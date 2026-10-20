@@ -34,3 +34,5 @@ Validation: 244 frontend tests and 72 Chromium/WebKit browser checks passed. A d
 The final gallery pass stops unnecessary background email lookups for browser-owned shoots, refreshes settled recovered galleries every five minutes, and backs off stalled work and lookup errors. Owned galleries retain their realtime listener and remain usable when email lookup fails; focus and explicit Retry still refresh immediately. Prepared photo saves stay open when an unrelated photo arrives, while replacing or removing a selected photo still invalidates the prepared files.
 
 Validation: 252 frontend tests, all 82 Chromium/WebKit browser checks, and the production build passed. This release changes only the website; the backend and Android app are unchanged. A real paid purchase through generation, email receipt, and reshoot remains untested.
+
+A confirmed reshoot now remains successful if the separate recovered-gallery lookup fails afterward. The gallery keeps its lookup warning and Retry control without showing the reshoot itself as failed. Validation: 253 frontend tests and 26 Chromium/WebKit recovered-gallery checks passed. The sequential Save all behavior is unchanged.

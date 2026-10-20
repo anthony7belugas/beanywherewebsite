@@ -5,8 +5,9 @@ import type { Pack } from "../../src/lib/types";
 const packs: Pack[] = JSON.parse(readFileSync(new URL("../../src/lib/catalog.json", import.meta.url), "utf8"));
 const pack = packs.find(value => value.packId === "paris")!;
 
-async function recoveredGallery(page: Page, emailState = "sent", missing = false, options: { owner?: boolean; limited?: boolean } = {}) {
-  const uid = `w_${"a".repeat(40)}`, owner = `w_${"b".repeat(40)}`;
+async function recoveredGallery(page: Page, emailState = "sent", missing = false,
+  options: { owner?: boolean; limited?: boolean; reshootLookupFailure?: boolean } = {}) {
+  const uid = `w_${"a".repeat(40)}`, owner = options.owner ? uid : `w_${"b".repeat(40)}`;
   const job = {
     id: "recovery-test", uid: options.owner ? uid : owner, packId: "paris", styling: "m", styleId: "tailored",
     clientVisible: true, status: "done", generationState: "finished", reshootsLeft: 3,
@@ -27,6 +28,7 @@ async function recoveredGallery(page: Page, emailState = "sent", missing = false
       export const liveMode = true;
       const job = ${JSON.stringify(job)};
       let connection = ${JSON.stringify(options.limited ? "limited" : "ready")};
+      let notifyOwned = () => {};
       window.galleryReads = 0;
       window.setGalleryConnection = value => { connection = value; };
       window.setDeliveryState = value => { job.emailRequestState = value; };
@@ -47,7 +49,8 @@ async function recoveredGallery(page: Page, emailState = "sent", missing = false
       const api = {
         session: { uid: ${JSON.stringify(uid)}, webAppId: 'isolated-qa', capabilityVersion: 1 },
         listJobs: async () => ${!!options.owner} ? [structuredClone(job)] : [],
-        watchJobs: async () => () => {}, recordEvent: async () => {},
+        watchJobs: async callback => { notifyOwned = () => callback([structuredClone(job)]); return () => {}; },
+        recordEvent: async () => {},
         listWebGalleries: async () => {
           window.galleryReads++;
           if (connection === 'offline') throw Object.assign(Error('Connection lost'), { code: 'functions/unavailable' });
@@ -68,6 +71,17 @@ async function recoveredGallery(page: Page, emailState = "sent", missing = false
           slot.status = 'done'; slot.retrying = false; slot.hasActiveClaim = false;
           slot.path = 'outputs/' + job.uid + '/' + job.id + '/p11.jpg';
           slot.manualAttempts = 1;
+        },
+        reshoot: async operation => {
+          if (!${!!options.reshootLookupFailure} || operation.jobId !== job.id || operation.slotId !== 's0') {
+            throw Error('Unexpected reshoot in this fixture');
+          }
+          job.slots[0].path = 'outputs/' + job.uid + '/' + job.id + '/replacement.jpg';
+          job.readableOutputPaths = job.slots.map(slot => slot.path).filter(Boolean);
+          job.reshootsLeft = 2;
+          connection = 'limited';
+          notifyOwned();
+          return { operationState: 'finished' };
         },
       };
       api.download = api.galleryPhoto;
@@ -92,6 +106,17 @@ test("a rate-limited recovery lookup leaves owned photos open and can be retried
   await warning.getByRole("button", { name: "Retry connection", exact: true }).click();
   await expect(warning).toHaveCount(0);
   await expect(page.locator(".gallery-toolbar")).toContainText("12 of 12");
+});
+
+test("a finished reshoot shows success even if the follow-up photo lookup is limited", async ({ page }) => {
+  await recoveredGallery(page, "sent", false, { owner: true, reshootLookupFailure: true });
+  await page.getByRole("button", { name: "Reshoot s0", exact: true }).click();
+  await page.getByRole("dialog", { name: "Create a new take?" })
+    .getByRole("button", { name: "Use 1 reshoot", exact: true }).click();
+  await expect(page.locator(".toast")).toContainText("Your reshoot request has been checked");
+  await expect(page.locator(".lead")).toContainText("2 reshoots left");
+  await expect(page.getByRole("status").filter({ hasText: "Photo lookup is temporarily limited" })).toBeVisible();
+  await expect(page.locator(".toast")).not.toContainText("Too many attempts");
 });
 
 test("settled galleries skip rapid polls but still refresh email feedback periodically", async ({ page }) => {

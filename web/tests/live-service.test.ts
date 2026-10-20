@@ -185,6 +185,31 @@ it("a pending reshoot is reconciled instead of consuming another reshoot", async
   expect(api.reshoot).toHaveBeenCalledTimes(2);
 });
 
+it("keeps a confirmed reshoot successful when optional gallery lookup fails afterward", async () => {
+  api.listWebGalleries = vi.fn().mockResolvedValue({ email: "", jobs: [], nextCursor: null });
+  await service.read();
+  const newer = job();
+  newer.slots[0].path = photoPath.replace("photo.jpg", "new.jpg");
+  newer.readableOutputPaths = [newer.slots[0].path];
+  newer.reshootsLeft = 2;
+  api.reshoot.mockImplementation(async () => {
+    api.watchJobs.mock.calls[0][0]([newer]);
+    return { operationState: "finished" };
+  });
+  api.listWebGalleries.mockRejectedValueOnce(Object.assign(
+    new Error("Too many attempts"), { code: "functions/resource-exhausted" },
+  ));
+  const changed = vi.fn();
+  service.subscribe(changed);
+  await expect(service.reshoot("job_1", "s0", crypto.randomUUID())).resolves.toBeUndefined();
+  expect(api.reshoot).toHaveBeenCalledOnce();
+  expect(changed).toHaveBeenCalled();
+  const state = await service.read();
+  expect(state.shoots[0].photos[0].path).toBe(newer.slots[0].path);
+  expect(state.shoots[0].reshootsLeft).toBe(2);
+  expect(state.galleryRefreshError).toContain("Photo lookup is temporarily limited");
+});
+
 it("starts a new reshoot on a new photo after reconciling the delayed previous result", async () => {
   await service.read();
   api.reshoot.mockResolvedValueOnce({ operationState: "finishing" });

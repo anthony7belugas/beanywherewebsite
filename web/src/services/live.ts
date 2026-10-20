@@ -531,7 +531,11 @@ export class LiveStudioService implements StudioService {
         : outcome.message;
       throw new Error(message || "That reshoot did not finish. Your photos are unchanged; try again or contact support.");
     }
-    await this.refreshGalleries(); this.changed();
+    // The server has accepted or finished this reshoot. Email-recovered library
+    // lookup is optional here; its failure must not turn a completed action into
+    // a retryable-looking error. refreshGalleries records the separate warning.
+    await this.refreshGalleries().catch(() => {});
+    this.changed();
   }
   async photoBlob(shootId: string, photo: Photo) {
     if (!photo.path) throw new Error("This photo is still being prepared.");
