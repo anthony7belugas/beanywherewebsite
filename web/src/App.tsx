@@ -702,10 +702,10 @@ function PackDetail({
               12 photos total
             </span>
             <span>
-              <RotateCcw size={16} />3 reshoots
+              <Images size={17} />2 per scene
             </span>
             <span>
-              <Images size={17} />2 per scene
+              <RotateCcw size={16} />3 reshoots
             </span>
           </div>
           <hr />
