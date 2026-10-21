@@ -14,7 +14,7 @@ export default defineConfig(({ command, mode }) => {
         : "The BeAnywhere web studio — a private, disconnected draft."),
     generateBundle() {
       this.emitFile({ type: "asset", fileName: "_headers", source:
-        `/studio/*\n  Content-Security-Policy: ${csp}; frame-ancestors 'none'\n  Referrer-Policy: no-referrer\n  X-Content-Type-Options: nosniff\n  Permissions-Policy: camera=(), microphone=(), geolocation=()\n` });
+        `/studio/*\n  Content-Security-Policy: ${csp}; frame-ancestors 'none'\n  Referrer-Policy: no-referrer\n  X-Content-Type-Options: nosniff\n  Permissions-Policy: camera=(), microphone=(), geolocation=()\n/owner-browser/*\n  Content-Security-Policy: default-src 'self'; script-src 'self'; connect-src https://us-central1-bethere-3d7de.cloudfunctions.net; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'\n  Referrer-Policy: no-referrer\n  Cache-Control: no-store\n  X-Robots-Tag: noindex, nofollow\n  X-Content-Type-Options: nosniff\n` });
     },
   }],
   base: "./",

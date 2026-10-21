@@ -23,6 +23,10 @@ async function versionedScript(name, dependencies) {
 }
 const storefront = await versionedScript('storefront',['analytics','acquisition']);
 const publicPages = await versionedScript('public-pages',['analytics','acquisition']);
+const ownerBrowser = await versionedScript('owner-browser',['analytics']);
+await mkdir(new URL('owner-browser/',root),{recursive:true});
+await writeFile(new URL('owner-browser/index.html',root),`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer"><title>Register your browser · BeAnywhere</title><link rel="stylesheet" href="/storefront.css?v=6"></head><body><main class="site-width"><section class="intro"><p>BEANYWHERE · OWNER SETUP</p><h1>Keep your visits separate.</h1><p>Register this browser so your own browsing stays out of your customer reports.</p><p>This uses an ID saved in this browser. Wi-Fi, cellular and VPN changes are fine. Safari, Chrome and Instagram may each have a separate ID. Register each one you use.</p><p>Browser ID: <strong id="browser-id"></strong></p><button class="primary-button" id="exclude-browser">Exclude this browser</button><p id="pair-status" role="status" aria-live="polite"></p><p>Private browsing or clearing site data can change the ID. This setup does not grant dashboard access. Original Analytics data and financial records are retained.</p><p><a href="/">Back to BeAnywhere</a></p></section></main><script type="module" src="/owner-browser.js?v=${revision(ownerBrowser)}"></script></body></html>`);
+
 const publicVersion = revision(publicPages);
 for (const name of ['support','privacy','terms']) {
   const path = new URL(`${name}.html`,root);

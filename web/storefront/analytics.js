@@ -207,6 +207,21 @@ export function nextIdentity(previous, { now, uuid, attribution }) {
   state.lastActiveAtMs = now;
   return state;
 }
+// Used only by the explicit owner setup page. No Analytics requests or Studio
+// sign-in are needed to identify this browser, and no IP/hardware ID is used.
+export function ownerBrowserId() {
+  const value = read(KEY);
+  return value && /^\d{1,16}\.\d{10}$/.test(value.clientId || "") &&
+    value.firstSeenAtMs > 0 && value.firstSeenAtMs <= Date.now() &&
+    Date.now() - value.firstSeenAtMs < YEAR ? value.clientId : null;
+}
+export function prepareOwnerBrowser() {
+  const state = nextIdentity(read(KEY), { now: Date.now(), uuid: () => crypto.randomUUID(), attribution: directAttribution() });
+  // Refuse an ephemeral ID that would stop matching as soon as this page closes.
+  window.localStorage.setItem(KEY, JSON.stringify(state));
+  if (ownerBrowserId() !== state.clientId) throw new Error("Browser storage is unavailable. Use a regular browser with storage enabled.");
+  return state.clientId;
+}
 function testTraffic() {
   if(window.location.hostname!=='beanywhere.app')return true;
   try {

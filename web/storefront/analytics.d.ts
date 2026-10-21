@@ -14,3 +14,6 @@ export function onAnalyticsPreference(fn:(enabled:boolean)=>void|Promise<void>):
 export function setEventTransport(fn:(row:{id:string;name:string;params:Record<string,string|number|boolean>;at:number})=>Promise<{disposition?:string}>):void;
 export function queueStudioEvent(name:string,params:Record<string,string|number|boolean>,eventId?:string):void;
 export function initAnalytics(options?:{enabled?:boolean}):void;
+
+export function ownerBrowserId(): string | null;
+export function prepareOwnerBrowser(): string;
