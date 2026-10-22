@@ -7,7 +7,7 @@ import {
   directAttribution,
 } from "./acquisition.js";
 export const MEASUREMENT_ID = "G-2VT9EWH1B5";
-export const ANALYTICS_VERSION = "web-20261021-8";
+export const ANALYTICS_VERSION = "web-20261021-9";
 const KEY = "beanywhere-measurement-v1";
 const CHOICE = "beanywhere-analytics-choice";
 const TIMEOUT = 30 * 60000;
@@ -155,16 +155,21 @@ function pendingSave() {
 }
 const earlyEvents = [];
 const eventContexts = new Map();
-function eventSnapshot() {
+function eventSnapshot(name) {
   return { at: Date.now(), pagePath: safePage(window.location.href), referrer: safeReferrer(),
     attribution: currentAttribution(), isTest: testTraffic(), activePage: document.visibilityState === "visible" && document.hasFocus(),
     arrival: new URL(window.location.href).searchParams.has("ba_at") ? directAttribution()
       : captureAttribution({ url: window.location.href, referrer: document.referrer }),
-    ...(analyticsAllowed() ? { context: analyticsContext({ active: false }) } : memory ? {context:{...memory}} : {}) };
+    // A temporary policy fetch failure pauses delivery, not the local visit
+    // clock. A real action after inactivity must retain its new session now;
+    // copying the old memory would attach it to the preceding visit on replay.
+    ...(analyticsAllowed() ? { context: analyticsContext({ active: false }) } : memory ? {context:{...identity({
+      active: !["web_vital", "web_error"].includes(name) && document.visibilityState === "visible",
+    })}} : {}) };
 }
 function rememberEarly(name, params, eventId) {
   if (!starting || policyDenied || analyticsPreference() === false || earlyEvents.length >= 100) return;
-  earlyEvents.push({ name, params: safeParams(params), eventId, snapshot: eventSnapshot() });
+  earlyEvents.push({ name, params: safeParams(params), eventId, snapshot: eventSnapshot(name) });
   pendingSave();
 }
 const earlyStudioEvents = [];
@@ -497,22 +502,27 @@ export function setEventTransport(fn) {
   outbox.setTransport(fn);
 }
 export function queueStudioEvent(name, params, eventId = crypto.randomUUID(), at = Date.now()) {
-  if (!initialized) {
+  if (!initialized || !policy.available) {
     if (
-      starting &&
+      starting && !policyDenied &&
       analyticsPreference() !== false &&
       earlyStudioEvents.length < 100
     )
-      earlyStudioEvents.push({ name, params, eventId, at: Date.now() });
+      earlyStudioEvents.push({ name, params, eventId, at,
+        context: memory ? { ...memory, enabled: true, version: ANALYTICS_VERSION,
+          isTest: testTraffic(), attribution: currentAttribution() } : null });
     return;
   }
+  emitStudioEvent(name, params, eventId, at);
+}
+function emitStudioEvent(name, params, eventId, at, deferredContext) {
   if (!analyticsAllowed()) return;
   const saved = eventContexts.get(eventId);
-  const context = saved?.context || analyticsContext({ active: false });
+  const context = saved?.context || deferredContext || analyticsContext({ active: false });
   outbox.enqueue({
     id: eventId,
     name,
-    params: { ...params, source: "web_studio", sessionId: context.sessionId, isTest: params.isTest === true || testTraffic() },
+    params: { ...params, source: "web_studio", sessionId: context.sessionId, isTest: params.isTest === true || context.isTest === true || testTraffic() },
     at: saved?.at || at, context,
   });
 }
@@ -564,7 +574,6 @@ export function initAnalytics({enabled=true}={}) {
 function replayPending() {
   const pending = earlyEvents.splice(0);
   pendingSave();
-  if (!pending.length) return;
   // Resolve the timeline before emitting; loading Google must not move the
   // shared session's activity clock between two queued historical actions.
   let replayState = read(KEY) || memory;
@@ -578,8 +587,12 @@ function replayPending() {
       snapshot.context = { ...replayState };
     }
   }
-  if (replayState) { memory=replayState; save(KEY,replayState); arrivalUsed=true; }
+  if (pending.length && replayState) { memory=replayState; save(KEY,replayState); arrivalUsed=true; }
   for (const event of pending) emitWeb(event.name,event.params,event.eventId,event.snapshot);
+  // The authenticated copy must resume after every successful policy retry,
+  // including retries after startup. Reuse the journal's exact context/time.
+  for (const event of earlyStudioEvents.splice(0))
+    emitStudioEvent(event.name,event.params,event.eventId,event.at,event.context);
 }
 function startAnalytics() {
   if (initialized) return;
@@ -621,8 +634,6 @@ function startAnalytics() {
   connectJournal();
   replayPending();
   page();
-  for (const event of earlyStudioEvents.splice(0))
-    queueStudioEvent(event.name, event.params, event.eventId, event.at);
   window.dispatchEvent(new Event("beanywhere-analytics-choice"));
   window.addEventListener("hashchange", page);
   const resume = () => {
@@ -653,7 +664,7 @@ function startAnalytics() {
     if (event.key === CHOICE) {
       window["ga-disable-" + MEASUREMENT_ID] = !analyticsAllowed();
       if (!analyticsAllowed()) {
-        outbox.clear(); journal.clear(); earlyEvents.length=0; pendingSave();
+        outbox.clear(); journal.clear(); earlyEvents.length=0; earlyStudioEvents.length=0; pendingSave();
         if (loaded) gtag("consent", "update", { analytics_storage: "denied" });
       } else {
         if (loaded) gtag("consent", "update", { analytics_storage: "granted" });

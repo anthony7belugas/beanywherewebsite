@@ -71,3 +71,9 @@ Checks: 266 frontend tests and 144 Chromium/WebKit browser checks passed. The ad
 ### Focus classification correction (October 21, web-20261021-8)
 
 Completed engagement intervals now retain `activePage: true` when emitted on blur, hide or pagehide: their duration was measured while focused. Otherwise short focused visits could be omitted from return reporting even though the duration survived in raw records. The existing blur/hide browser regression now checks classification as well as avoiding duplicated time. The companion owner-report update separates server-only follow-ups from visits and bases retention eligibility on export coverage rather than the latest customer action.
+
+### Temporary measurement outage correction (October 21, web-20261021-9)
+
+A temporary policy-fetch failure now preserves the visit clock for actual browser actions. Returning after inactivity retains a new session, the original action time, direct return attribution and the earlier campaign's sales credit. Deferred error/performance callbacks still do not advance activity. Studio business copies now queue during a temporary policy outage and resume with the browser journal's matching event ID, time, context and test marker. Explicit withdrawal clears both pending copies, including withdrawal from another tab.
+
+Validation: 266 frontend unit tests, the production build and all 148 browser checks passed. Six focused Chromium/WebKit checks additionally cover the reproduced failures and withdrawal during the outage. The unchanged backend passed all 271 release checks. A fresh read-only combined export retrieved all nine included sources, excluded the four known owner/test browsers, and retained the same four observed customer browser sessions and zero paid customer purchases. Tests use local mocked endpoints; no customer purchases, photos or delivery emails are created. Email-only gallery recovery remains unchanged.

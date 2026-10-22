@@ -512,3 +512,64 @@ test("a transferred old source preserves sales credit but does not invent a fres
   expect(row.context.attribution.source).toBe('instagram');
   expect(row.context.sessionAttribution.source).toBe('direct');
 });
+
+test("a return during a temporary policy outage keeps the new session and its original action time",async({page})=>{
+  await page.clock.install();
+  await setup(page);
+  let fail=false; const raw:any[]=[];
+  await page.route('**/getWebAnalyticsPolicy',route=>fail?route.abort():route.fulfill({json:{available:true,mode:'automatic'},headers:{'Access-Control-Allow-Origin':'*'}}));
+  await page.route('**/collectWebJourney',async route=>{raw.push(route.request().postDataJSON());await route.fulfill({json:{disposition:'accepted'},headers:{'Access-Control-Allow-Origin':'*'}});});
+  await page.goto('/?utm_source=reddit&utm_medium=social');
+  await expect.poll(()=>raw.some(row=>row.name==='page_view')).toBe(true);
+  const first=raw.find(row=>row.name==='page_view');
+  fail=true;
+  await page.evaluate(()=>{Object.defineProperty(document,'hasFocus',{configurable:true,value:()=>false});window.dispatchEvent(new Event('blur'));});
+  await page.clock.fastForward(31*60000);
+  await expect.poll(()=>page.evaluate(()=>(window as any)['ga-disable-G-2VT9EWH1B5'])).toBe(true);
+  await page.evaluate(()=>{Object.defineProperty(document,'hasFocus',{configurable:true,value:()=>true});window.dispatchEvent(new Event('focus'));});
+  await page.getByRole('button',{name:'Men’s styling',exact:true}).click();
+  const clickedAt=await page.evaluate(()=>Date.now());
+  fail=false;
+  await page.evaluate(()=>window.dispatchEvent(new Event('online')));
+  await expect.poll(()=>raw.some(row=>row.name==='styling_selected')).toBe(true);
+  const action=raw.find(row=>row.name==='styling_selected');
+  expect(action.context.clientId).toBe(first.context.clientId);
+  expect(action.context.sessionId).not.toBe(first.context.sessionId);
+  expect(action.context.sessionAttribution.source).toBe('direct');
+  expect(action.context.attribution.source).toBe('reddit');
+  expect(action.at).toBeLessThanOrEqual(clickedAt);
+});
+
+for (const withdraw of [false, true]) test(`a temporary policy outage preserves Studio copies unless permission is withdrawn: ${withdraw}`,async({page})=>{
+  await page.clock.install(); await setup(page);
+  let fail=false; const raw:any[]=[];
+  await page.route('**/getWebAnalyticsPolicy',route=>fail?route.abort():route.fulfill({json:{available:true,mode:'automatic'},headers:{'Access-Control-Allow-Origin':'*'}}));
+  await page.route('**/collectWebJourney',async route=>{raw.push(route.request().postDataJSON());await route.fulfill({json:{disposition:'accepted'},headers:{'Access-Control-Allow-Origin':'*'}});});
+  await page.goto('/?ba_test=1');
+  await expect.poll(()=>raw.some(row=>row.name==='page_view')).toBe(true);
+  fail=true; await page.clock.fastForward(5*60000);
+  await expect.poll(()=>page.evaluate(()=>(window as any)['ga-disable-G-2VT9EWH1B5'])).toBe(true);
+  const id=await page.evaluate(async modulePath=>{
+    const a=await import(/* @vite-ignore */ modulePath), id=crypto.randomUUID();
+    (window as any).auditStudioRows=[];
+    a.setEventTransport(async(row:any)=>{(window as any).auditStudioRows.push(row);return {disposition:'accepted'};});
+    a.trackWeb('pack_opened',{packId:'paris'},id);
+    a.queueStudioEvent('pack_opened',{packId:'paris'},id);
+    return id;
+  },analyticsModule);
+  expect(await page.evaluate(()=>(window as any).auditStudioRows)).toEqual([]);
+  if (withdraw) await setPreference(page,false);
+  fail=false; await page.evaluate(()=>window.dispatchEvent(new Event('online')));
+  if (withdraw) {
+    await setPreference(page,true);
+    await expect.poll(()=>page.evaluate(()=>(window as any)['ga-disable-G-2VT9EWH1B5'])).toBe(false);
+    expect(raw.some(row=>row.id===id)).toBe(false);
+    expect(await page.evaluate(()=>(window as any).auditStudioRows)).toEqual([]);
+    return;
+  }
+  await expect.poll(()=>raw.some(row=>row.id===id)).toBe(true);
+  await expect.poll(()=>page.evaluate(()=>(window as any).auditStudioRows.length)).toBe(1);
+  const studio=(await page.evaluate(()=>(window as any).auditStudioRows))[0], browser=raw.find(row=>row.id===id);
+  expect(studio.id).toBe(browser.id); expect(studio.at).toBe(browser.at);
+  expect(studio.context).toEqual(browser.context); expect(studio.params.isTest).toBe(true);
+});
