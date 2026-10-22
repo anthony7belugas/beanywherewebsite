@@ -482,3 +482,21 @@ test("first-party delivery retries the same raw event after a navigation",async(
   await expect.poll(()=>raw.filter(row=>row.id===first.id).length).toBeGreaterThan(1);
   const replay=[...raw].reverse().find(row=>row.id===first.id);expect(replay).toEqual(first);
 });
+
+
+test("marked test traffic keeps the same ID and original context in authenticated business records",async({page})=>{
+  await setup(page);await page.goto('/?ba_test=1');
+  await expect.poll(async()=> (await pageViews(page)).length).toBe(1);
+  const row=await page.evaluate(async modulePath=>{
+    const a=await import(/* @vite-ignore */ modulePath);
+    const eventId=crypto.randomUUID();
+    const sent=new Promise<any>(resolve=>a.setEventTransport(async (event:any)=>{resolve(event);return {disposition:'accepted'};}));
+    a.trackWeb('pack_opened',{packId:'paris'},eventId);
+    a.queueStudioEvent('pack_opened',{packId:'paris'},eventId);
+    return {row:await sent,eventId};
+  },analyticsModule);
+  expect(row.row.id).toBe(row.eventId);expect(row.row.params.isTest).toBe(true);
+  expect(row.row.params.sessionId).toBe(row.row.context.sessionId);
+  const ga=(await records(page)).find(entry=>entry[1]==='pack_opened')![2] as any;
+  expect(row.row.at).toBe(ga.occurred_at_ms);expect(row.row.context.gaSessionId).toBe(ga.session_id);
+});

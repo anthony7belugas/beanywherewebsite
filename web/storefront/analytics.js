@@ -510,7 +510,7 @@ export function queueStudioEvent(name, params, eventId = crypto.randomUUID(), at
   outbox.enqueue({
     id: eventId,
     name,
-    params: { ...params, source: "web_studio", sessionId: context.sessionId },
+    params: { ...params, source: "web_studio", sessionId: context.sessionId, isTest: params.isTest === true || testTraffic() },
     at: saved?.at || at, context,
   });
 }
