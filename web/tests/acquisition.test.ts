@@ -1,5 +1,17 @@
 import { expect, it, vi } from 'vitest';
 import { captureAttribution, attributedLink, directAttribution } from '../storefront/acquisition.js';
+
+it('distinguishes webmail and non-search Google referrals from actual search', () => {
+  const from = (referrer: string) => captureAttribution({url:'https://beanywhere.app/',referrer});
+  expect(from('https://mail.google.com/mail/u/0/#inbox')).toMatchObject({source:'gmail',medium:'email'});
+  expect(from('https://docs.google.com/document/d/example')).toMatchObject({source:'docs.google.com',medium:'referral'});
+  expect(from('https://drive.google.com/file/d/example')).toMatchObject({source:'drive.google.com',medium:'referral'});
+  expect(from('https://accounts.google.com/')).toMatchObject({source:'accounts.google.com',medium:'referral'});
+  expect(from('https://www.google.com/search?q=photos')).toMatchObject({source:'google',medium:'organic'});
+  expect(from('https://images.google.com/')).toMatchObject({source:'google',medium:'organic'});
+  expect(from('https://google.com.evil.example/')).toMatchObject({source:'google.com.evil.example',medium:'referral'});
+  expect(captureAttribution({url:'https://beanywhere.app/?utm_source=newsletter&utm_medium=email',referrer:'https://www.google.com/'})).toMatchObject({source:'newsletter',medium:'email'});
+});
 const now = 1792400000000;
 function memory() { const data = new Map<string, string>(); return { getItem: (k: string) => data.get(k) || null, setItem: (k: string, v: string) => { data.set(k, v); } }; }
 it('keeps tagged source and post labels through storefront navigation and a direct return', () => {

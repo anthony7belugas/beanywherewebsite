@@ -631,3 +631,67 @@ for(const withdraw of [false,true]) test(`pending Studio events survive navigati
   expect(studio.params.isTest).toBe(true);
   expect(await page.evaluate(()=>JSON.parse(sessionStorage.getItem('beanywhere-studio-pending-v1')!))).toEqual([]);
 });
+
+test('reloading the same page during a policy outage retains both actual page loads',async({page})=>{
+  await setup(page);
+  let available=false; const raw:any[]=[];
+  await page.route('**/getWebAnalyticsPolicy',route=>available
+    ?route.fulfill({json:{available:true,mode:'automatic'},headers:{'Access-Control-Allow-Origin':'*'}}):route.abort());
+  await page.route('**/collectWebJourney',async route=>{
+    raw.push(route.request().postDataJSON());
+    await route.fulfill({json:{disposition:'accepted'},headers:{'Access-Control-Allow-Origin':'*'}});
+  });
+  await page.goto('/?utm_source=reddit&ba_test=1');
+  const first=await page.evaluate(()=>JSON.parse(sessionStorage.getItem('beanywhere-analytics-pending-v1')!).filter((r:any)=>r.name==='page_view'));
+  expect(first).toHaveLength(1);
+  await page.reload();
+  await expect.poll(()=>page.evaluate(()=>JSON.parse(sessionStorage.getItem('beanywhere-analytics-pending-v1')!).filter((r:any)=>r.name==='page_view').length)).toBe(2);
+  available=true;
+  await page.evaluate(()=>window.dispatchEvent(new Event('online')));
+  await expect.poll(async()=> (await pageViews(page)).length).toBe(2);
+  await expect.poll(()=>raw.filter(r=>r.name==='page_view').length).toBe(2);
+  const loads=raw.filter(r=>r.name==='page_view');
+  expect(loads[0].id).toBe(first[0].eventId);
+  expect(loads[0].at).toBe(first[0].snapshot.at);
+  expect(loads[1].id).not.toBe(loads[0].id);
+  expect(loads[1].context.sessionId).toBe(loads[0].context.sessionId);
+  expect(loads.every(r=>r.isTest&&r.context.isTest)).toBe(true);
+});
+
+for(const marked of [false,true]) test(`blocked storage preserves production test classification without excluding customers: ${marked}`,async({page})=>{
+  const raw:any[]=[];
+  // All requests are intercepted. The production hostname exercises its real
+  // test-marker branch without visiting the live site or sending any events.
+  await page.route('**/*',route=>route.abort());
+  await setup(page);
+  await page.route('**/collectWebJourney',async route=>{
+    raw.push(route.request().postDataJSON());
+    await route.fulfill({json:{disposition:'accepted'},headers:{'Access-Control-Allow-Origin':'*'}});
+  });
+  await page.route('https://beanywhere.app/**',route=>{
+    const path=new URL(route.request().url()).pathname;
+    return ['/analytics.js','/acquisition.js'].includes(path)
+      ?route.fulfill({body:readFileSync(new URL(path.slice(1),root)),contentType:'application/javascript'})
+      :path==='/'?route.fulfill({body:'<!doctype html><script type="module">import * as analytics from "/analytics.js"; window.auditAnalytics=analytics; analytics.initAnalytics();</script>',contentType:'text/html'})
+      :route.abort();
+  });
+  await page.addInitScript(()=>Object.defineProperty(window,'sessionStorage',{get(){throw Error('Storage denied');}}));
+  await page.goto('https://beanywhere.app/'+(marked?'?ba_test=1':''));
+  await expect.poll(()=>raw.some(r=>r.name==='page_view')).toBe(true);
+  expect(raw.find(r=>r.name==='page_view').isTest).toBe(marked);
+  await page.evaluate(()=>{
+    history.replaceState(null,'','/');
+    const analytics=(window as any).auditAnalytics;
+    analytics.trackWeb('cta_clicked',{action:'test_marker'});
+    (window as any).studioRows=[];
+    analytics.setEventTransport(async(row:any)=>{(window as any).studioRows.push(row);return {disposition:'accepted'};});
+    const id=crypto.randomUUID();
+    analytics.trackWeb('pack_opened',{packId:'paris'},id);
+    analytics.queueStudioEvent('pack_opened',{packId:'paris'},id);
+  });
+  await expect.poll(()=>raw.some(r=>r.name==='cta_clicked')).toBe(true);
+  expect(raw.every(r=>r.isTest===marked&&r.context.isTest===marked)).toBe(true);
+  expect((await pageViews(page))[0].is_test).toBe(marked?1:0);
+  await expect.poll(()=>page.evaluate(()=>(window as any).studioRows.length)).toBe(1);
+  expect((await page.evaluate(()=>(window as any).studioRows))[0]).toMatchObject({context:{isTest:marked},params:{isTest:marked}});
+});

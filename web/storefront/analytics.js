@@ -7,7 +7,7 @@ import {
   directAttribution,
 } from "./acquisition.js";
 export const MEASUREMENT_ID = "G-2VT9EWH1B5";
-export const ANALYTICS_VERSION = "web-20261021-10";
+export const ANALYTICS_VERSION = "web-20261021-11";
 const KEY = "beanywhere-measurement-v1";
 const CHOICE = "beanywhere-analytics-choice";
 const TIMEOUT = 30 * 60000;
@@ -250,12 +250,17 @@ export function prepareOwnerBrowser() {
   if (ownerBrowserId() !== state.clientId) throw new Error("Browser storage is unavailable. Use a regular browser with storage enabled.");
   return state.clientId;
 }
+let volatileTestTraffic = false;
 function testTraffic() {
   if(window.location.hostname!=='beanywhere.app')return true;
+  // An explicit test link remains a test even when browser storage throws.
+  // Retain the marker in this document after client-side URL cleanup as well.
+  volatileTestTraffic ||= new URL(window.location.href).searchParams.get('ba_test')==='1';
   try {
-    if(new URL(window.location.href).searchParams.get('ba_test')==='1')sessionStorage.setItem('beanywhere-analytics-test','1');
-    return sessionStorage.getItem('beanywhere-analytics-test')==='1';
-  }catch{return false;}
+    if(volatileTestTraffic)sessionStorage.setItem('beanywhere-analytics-test','1');
+    volatileTestTraffic ||= sessionStorage.getItem('beanywhere-analytics-test')==='1';
+  }catch{}
+  return volatileTestTraffic;
 }
 function identity({ active = true } = {}) {
   // Deferred performance/error callbacks describe the viewed page; they must
@@ -386,7 +391,9 @@ function emitWeb(name, params, eventId = crypto.randomUUID(), snapshot) {
       session = state.sessionAttribution || directAttribution();
     load(state);
     const pagePath = snapshot?.pagePath ?? safePage(window.location.href);
-    if (name === "page_view" && lastPage === pagePath && lastPageSession === state.sessionId)
+    // Pending page views have distinct IDs from real navigations, including
+    // reloads of the same URL. Only suppress repeat callbacks for the live page.
+    if (name === "page_view" && !snapshot && lastPage === pagePath && lastPageSession === state.sessionId)
       return;
     const startsPage = name === "page_view" || (!snapshot &&
       lastPageSession !== state.sessionId && document.visibilityState === "visible");

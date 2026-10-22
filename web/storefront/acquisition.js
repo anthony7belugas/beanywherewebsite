@@ -30,11 +30,15 @@ export function captureAttribution({ url, referrer = '', storage, now = Date.now
       if (host !== current.hostname && !host.endsWith('.' + current.hostname)) {
         const known = [['instagram.com', 'instagram'], ['tiktok.com', 'tiktok'], ['facebook.com', 'facebook'],
           ['reddit.com', 'reddit'], ['linkedin.com', 'linkedin'], ['youtube.com', 'youtube'],
-          ['t.co', 'x'], ['twitter.com', 'x'], ['google.com', 'google'], ['bing.com', 'bing']];
+          ['t.co', 'x'], ['twitter.com', 'x']];
         const match = known.find(([domain]) => host === domain || host.endsWith('.' + domain));
         if (!['checkout.stripe.com','billing.stripe.com','beanywhere.app','www.beanywhere.app'].includes(host)) {
-          const source=match ? match[1] : label(host.replace(/^www\./,''));
-          if(source) { next = { ...directAttribution(), source, medium:match ? (['google', 'bing'].includes(source) ? 'organic' : 'social') : 'referral' }; explicit = true; }
+          // A Google-owned host is not necessarily a search referral. Keep
+          // webmail distinct, and retain other service hosts as referrals.
+          const search = ['google.com','www.google.com','images.google.com'].includes(host) ? 'google'
+            : ['bing.com','www.bing.com','cn.bing.com'].includes(host) ? 'bing' : '';
+          const source=host==='mail.google.com' ? 'gmail' : search || (match ? match[1] : label(host.replace(/^www\./,'')));
+          if(source) { next = { ...directAttribution(), source, medium:host==='mail.google.com' ? 'email' : search ? 'organic' : match ? 'social' : 'referral' }; explicit = true; }
         }
       }
     } catch { /* A missing referrer is normal. */ }
