@@ -1,3 +1,4 @@
+import { analyticsErrorCode } from "../lib/analytics-error";
 import { analyticsContext, analyticsAllowed, analyticsPreference, setAnalyticsAllowed, onAnalyticsPreference, trackWeb, queueStudioEvent, setEventTransport } from "../../storefront/analytics.js";
 import { openDB } from "idb";
 import { currentAttribution, type Acquisition } from "../../storefront/acquisition.js";
@@ -60,7 +61,7 @@ export class LiveStudioService implements StudioService {
   track(name: string, params: Record<string, string | number | boolean>, stableEventId?: string) {
     const eventId=stableEventId || crypto.randomUUID();
     trackWeb(name,params,eventId);
-    // Only existing business events go to Firebase. Routine browsing stays in GA4.
+    // Business events also keep authenticated ownership; public journey records use browser IDs.
     const backendNames=new Set(["pack_opened","checkout_viewed","upload_screen_viewed","reference_selection_started","reference_selection_completed","upload_started","upload_completed","upload_failed","consent_completed","purchase_initiated","purchase_completed","purchase_failed","photo_saved","save_all","download_failed","save_all_partial","library_viewed","library_failed","results_revealed","results_completed","slot_retry","support_opened"]);
     if(!backendNames.has(name))return;
     const clean={...params};
@@ -99,7 +100,7 @@ export class LiveStudioService implements StudioService {
   }
   private api() {
     return this.apiPromise ??= this.connect().then(api=>{
-      setEventTransport(row=>api.recordEvent(row.name,row.params,row.id,row.at));
+      setEventTransport(row=>api.recordEvent(row.name,row.params,row.id,row.at,row.context));
       if(api.getAnalyticsProfile) {
         let syncing=false,again=false,retry:ReturnType<typeof setTimeout>|undefined,failures=0,observedSession='';
         const sync=async()=>{
@@ -369,7 +370,7 @@ export class LiveStudioService implements StudioService {
         this.track("upload_started", { packId: draft.packId, styling: draft.styling });
         const uploadStarted=performance.now();
         const uploaded = await api.uploadReferences(blobs, attempt.uploadAttempt, attempt.draft.wearsGlasses,
-          () => {}, signal).catch(error=>{this.track("upload_failed",{packId:draft.packId,styling:draft.styling,reason:signal?.aborted?"cancelled":"unknown"});throw error;});
+          () => {}, signal).catch(error=>{this.track("upload_failed",{packId:draft.packId,styling:draft.styling,reason:signal?.aborted?"cancelled":analyticsErrorCode(error)});throw error;});
         attempt = await this.checkpoint(attempt, { uploadSessionId: uploaded.sessionId });
         this.track("upload_completed", { packId: draft.packId, styling: draft.styling, count:blobs.length,durationMs:Math.round(performance.now()-uploadStarted) });
       }

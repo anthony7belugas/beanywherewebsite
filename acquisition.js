@@ -2,7 +2,7 @@
 const KEY = 'beanywhere-acquisition-v1';
 const WINDOW = 30 * 86400000;
 const fields = { source: 'utm_source', medium: 'utm_medium', campaign: 'utm_campaign', content: 'utm_content', code: 'source_code' };
-const label = value => typeof value === 'string' && /^[a-z0-9][a-z0-9_.-]{0,63}$/i.test(value.trim()) ? value.trim().toLowerCase() : '';
+const label = value => typeof value === 'string' && /^[a-z0-9][a-z0-9_. -]{0,63}$/i.test(value.trim()) ? value.trim().toLowerCase().replace(/ +/g, '_') : '';
 export const directAttribution = () => ({ source: 'direct', medium: 'none', campaign: '', content: '', code: '' });
 function storedAttribution(storage, now) {
   try {

@@ -1,3 +1,4 @@
+import { analyticsErrorCode } from "../lib/analytics-error";
 import { trackWeb } from "../../storefront/analytics.js";
 import { useEffect, useRef, useState } from "react";
 import { LoaderCircle, Download, ShieldCheck } from "lucide-react";
@@ -98,18 +99,22 @@ export function PaymentReturn({ orderId, shoots }: { orderId: string; shoots: St
   const [waiting, setWaiting] = useState(true);
   const [editing, setEditing] = useState(false);
   useEffect(() => {
-    let active = true, count = 0;
+    let active = true, count = 0, lastFailure = "";
     let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
       try {
         if (!/^[A-Za-z0-9_-]{1,128}$/.test(orderId) || !service.payment) throw new Error("Open your checkout from this browser to check its status.");
         const next = await service.payment(orderId);
         if (!active) return;
-        setCheckout(next); setError("");
+        setCheckout(next); setError(""); lastFailure = "";
         if (["fulfilled", "expired", "refunded", "needs-support"].includes(next.state)) { setWaiting(false); return; }
-      } catch (e) { if (active) setError((e as Error).message); }
+      } catch (e) { if (active) {
+        const code = analyticsErrorCode(e);
+        if (code !== lastFailure) trackWeb("web_error", { surface: "payment_status", error_code: code });
+        lastFailure = code; setError((e as Error).message);
+      } }
       if (active && ++count < 40) timer = setTimeout(poll, count < 10 ? 10000 : 30000);
-      else if (active) setWaiting(false);
+      else if (active) { trackWeb("web_error", { surface: "payment_status", error_code: "polling_timeout" }); setWaiting(false); }
     };
     setWaiting(true); void poll();
     return () => { active = false; clearTimeout(timer); };

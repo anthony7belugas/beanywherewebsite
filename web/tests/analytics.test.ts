@@ -134,3 +134,20 @@ it("retries with the same event id and timestamp, removes acknowledged events, a
   expect(stored).toHaveLength(0);
   queue.clear();
 });
+
+import { createPersistentEventStore } from '../storefront/event-outbox.js';
+it('two browser tabs retain separate pending events when one acknowledges a stale snapshot',()=>{
+  const data=new Map<string,string>();
+  const storage={get length(){return data.size;},key:(i:number)=>[...data.keys()][i],getItem:(key:string)=>data.get(key)||null,
+    setItem:(key:string,value:string)=>{data.set(key,value);},removeItem:(key:string)=>{data.delete(key);}} as Storage;
+  const a=createPersistentEventStore({prefix:'queue',storage:()=>storage,now:()=>now});
+  const b=createPersistentEventStore({prefix:'queue',storage:()=>storage,now:()=>now});
+  const first={id:uuid(),name:'page_view',params:{},at:now},second={...first,id:uuid()};
+  a.put(first);const stale=a.read();b.put(second);a.remove(stale[0].id);
+  expect(b.read()).toEqual([second]);
+});
+it('campaign names with spaces survive while emails and arbitrary URLs are rejected',()=>{
+  expect(captureAttribution({url:'https://beanywhere.app/?utm_source=Instagram&utm_campaign=Fall%20Launch&utm_content=Reel%201',now}))
+    .toMatchObject({source:'instagram',campaign:'fall_launch',content:'reel_1'});
+  expect(captureAttribution({url:'https://beanywhere.app/?utm_source=instagram&utm_campaign=private%40example.com',now}).campaign).toBe('');
+});

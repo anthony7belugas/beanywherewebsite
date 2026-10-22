@@ -3,6 +3,7 @@ export function createEventOutbox({
   read,
   write,
   allowed,
+  put, remove, clearStorage,
   now = Date.now,
   schedule = setTimeout,
   cancel = clearTimeout,
@@ -20,7 +21,7 @@ export function createEventOutbox({
         row.at <= now() + 300000,
     );
   };
-  const prune = (id) => write(rows().filter((row) => row.id !== id));
+  const prune = (id) => remove ? remove(id) : write(rows().filter((row) => row.id !== id));
   async function flush() {
     if (flushing || !transport || !allowed()) return;
     flushing = true;
@@ -53,7 +54,7 @@ export function createEventOutbox({
       if (!allowed()) return;
       const saved = rows();
       if (!saved.some((item) => item.id === row.id)) saved.push(row);
-      write(saved.slice(-100));
+      if (put) put(row); else write(saved.slice(-100));
       void flush();
     },
     setTransport(fn) {
@@ -63,7 +64,43 @@ export function createEventOutbox({
     flush,
     clear() {
       cancel(timer);
-      write([]);
+      if (clearStorage) clearStorage(); else write([]);
     },
   };
+}
+
+// Each event has its own storage key. Two tabs adding/removing different events
+// cannot replace one another's entire queue with a stale array.
+export function createPersistentEventStore({ prefix, storage, legacy = () => [], clearLegacy = () => {}, now = Date.now }) {
+  const memory = new Map();
+  const key = id => prefix + ':' + id;
+  const remove = id => { memory.delete(id); try { storage()?.removeItem(key(id)); } catch {} };
+  const read = () => {
+    const rows = new Map(memory);
+    try {
+      const saved = storage();
+      for (let i=0; saved && i<saved.length; i++) {
+        const name=saved.key(i);
+        if (name?.startsWith(prefix+':')) {
+          try { const row=JSON.parse(saved.getItem(name)); if (row?.id) rows.set(row.id,row); } catch {}
+        }
+      }
+    } catch {}
+    const valid = [];
+    for (const row of rows.values()) {
+      if (row.at > now()-86400000 && row.at <= now()+300000) valid.push(row);
+      else remove(row.id);
+    }
+    return valid.sort((a,b)=>a.at-b.at || a.id.localeCompare(b.id));
+  };
+  const put = row => {
+    try { const saved=storage(); if (!saved) throw Error('No storage'); saved.setItem(key(row.id),JSON.stringify(row)); memory.delete(row.id); }
+    catch { memory.set(row.id,row); }
+    const rows=read(); for(const old of rows.slice(0,Math.max(0,rows.length-100)))remove(old.id);
+  };
+  // Upgrade only after collection is permitted, preserving pending old-version events.
+  let migrated=false;
+  const migrate=()=>{if(migrated)return;migrated=true;const old=legacy();if(Array.isArray(old))for(const row of old)if(row?.id)put(row);clearLegacy();};
+  return { read:()=>{migrate();return read();}, put:row=>{migrate();put(row);}, remove,
+    clear:()=>{for(const row of read())remove(row.id);clearLegacy();} };
 }

@@ -1,5 +1,5 @@
-import { initAnalytics, trackWeb } from './analytics.js?v=bb7ca6b8e7890f9a';
-import { currentAttribution, attributedLink } from './acquisition.js?v=75c8d0f7a609bd01';
+import { initAnalytics, trackWeb } from './analytics.js?v=0696ff348e22c20e';
+import { currentAttribution, attributedLink } from './acquisition.js?v=3836e14708bfebc5';
 
 // Informational pages share browsing preferences and identity, without Studio sign-in.
 currentAttribution();

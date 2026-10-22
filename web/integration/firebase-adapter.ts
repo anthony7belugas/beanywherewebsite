@@ -256,9 +256,9 @@ export function createFirebaseAdapter(deps: AdapterDependencies) {
       stopAuth();
       invalidate();
     },
-    async recordEvent(name: string, params: Record<string, string | number | boolean>, eventId: string, occurredAtMs = Date.now()) {
+    async recordEvent(name: string, params: Record<string, string | number | boolean>, eventId: string, occurredAtMs = Date.now(), context?: import("../storefront/analytics.js").AnalyticsContext) {
       return call<{ disposition?: string }>("recordClientEvent", { name, params, eventId, expectedUid: session.uid,
-        occurredAtMs }, 10000);
+        occurredAtMs, ...(context?.enabled ? { context } : {}) }, 10000);
     },
     getAnalyticsProfile() { return call<{analyticsAvailable:boolean;analytics:boolean;preferenceRevisions:{analytics:number}}>("getLaunchProfile",{}); },
     setAnalyticsPreference(enabled:boolean, revision:number) { return call<{applied:boolean;analytics:boolean;preferenceRevisions:{analytics:number}}>("setLaunchPreferences",{analytics:enabled,expectedUid:session.uid,noticeVersion:2,expectedRevisions:{analytics:revision}}); },

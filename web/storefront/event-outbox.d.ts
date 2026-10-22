@@ -1,2 +1,4 @@
-export type QueuedEvent={id:string;name:string;params:Record<string,string|number|boolean>;at:number};
-export function createEventOutbox(options:{read:()=>unknown;write:(rows:QueuedEvent[])=>void;allowed:()=>boolean;now?:()=>number;schedule?:(fn:()=>void,ms:number)=>any;cancel?:(timer:any)=>void}):{enqueue:(row:QueuedEvent)=>void;setTransport:(fn:(row:QueuedEvent)=>Promise<{disposition?:string}>)=>void;flush:()=>Promise<void>;clear:()=>void};
+export type QueuedEvent={id:string;name:string;params:Record<string,string|number|boolean>;at:number;context?:import("./analytics.js").AnalyticsContext;pagePath?:string;referrer?:string;isTest?:boolean};
+export function createEventOutbox(options:{read:()=>unknown;write?:(rows:QueuedEvent[])=>void;put?:(row:QueuedEvent)=>void;remove?:(id:string)=>void;clearStorage?:()=>void;allowed:()=>boolean;now?:()=>number;schedule?:(fn:()=>void,ms:number)=>any;cancel?:(timer:any)=>void}):{enqueue:(row:QueuedEvent)=>void;setTransport:(fn:(row:QueuedEvent)=>Promise<{disposition?:string}>)=>void;flush:()=>Promise<void>;clear:()=>void};
+
+export function createPersistentEventStore(options:{prefix:string;storage:()=>Storage|null;legacy?:()=>unknown;clearLegacy?:()=>void;now?:()=>number}):{read:()=>QueuedEvent[];put:(row:QueuedEvent)=>void;remove:(id:string)=>void;clear:()=>void};

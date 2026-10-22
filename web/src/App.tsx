@@ -1,3 +1,4 @@
+import { analyticsErrorCode } from "./lib/analytics-error";
 import { trackWeb } from "../storefront/analytics.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -142,6 +143,7 @@ export default function App() {
         .catch((error: unknown) => {
           if (alive) {
             const savedDataError = error instanceof InvalidStoredStateError;
+            trackWeb("web_error", { surface: "studio_startup", error_code: savedDataError ? "stored_state_invalid" : analyticsErrorCode(error) });
             setRecoverable(savedDataError);
             setFatal(
               savedDataError
@@ -877,7 +879,7 @@ function Upload({
       if (operation !== preparation.current) return;
       if (refs.length !== draft.references.length)
         await service.updateDraft(draft, { references: refs });
-      service.track?.("reference_selection_completed",{packId:draft.packId,styling:draft.styling,count:refs.length-draft.references.length,durationMs:Math.round(performance.now()-analyticsStart)});
+      if (refs.length > draft.references.length) service.track?.("reference_selection_completed",{packId:draft.packId,styling:draft.styling,count:refs.length-draft.references.length,durationMs:Math.round(performance.now()-analyticsStart)});
       if(errors.length)trackWeb("reference_selection_failed",{packId:draft.packId,count:errors.length,error_code:"preparation_or_validation"});
       if (errors.length) notify(errors.join(" "));
     } catch (e) {
@@ -1160,7 +1162,7 @@ function Checkout({
         notify("Demo shoot created. No payment was taken.");
       }
     } catch (e) {
-      service.track?.("purchase_failed",{packId:draft.packId,styling:draft.styling,reason:"unknown"});
+      service.track?.("purchase_failed",{packId:draft.packId,styling:draft.styling,reason:analyticsErrorCode(e)});
       setError((e as Error).message);
     } finally {
       setBusy(false);

@@ -15,6 +15,7 @@ async function setup(
   page: Page,
   policyGate: Promise<void> = Promise.resolve(),
 ) {
+  await page.route("https://us-central1-bethere-3d7de.cloudfunctions.net/collectWebJourney", route => route.fulfill({json:{disposition:"accepted"},headers:{"Access-Control-Allow-Origin":"*"}}));
   await page.route(
     "https://us-central1-bethere-3d7de.cloudfunctions.net/getWebAnalyticsPolicy",
     async (route) => {
@@ -420,7 +421,7 @@ for (const path of ["/support", "/privacy", "/terms"]) test(`informational page 
   await setup(page);
   const backend: string[] = [];
   page.on("request", request => {
-    if (/cloudfunctions\.net|firestore\.googleapis|identitytoolkit\.googleapis/.test(request.url()) && !request.url().includes("getWebAnalyticsPolicy")) backend.push(request.url());
+    if (/cloudfunctions\.net|firestore\.googleapis|identitytoolkit\.googleapis/.test(request.url()) && !request.url().includes("getWebAnalyticsPolicy") && !request.url().includes("collectWebJourney")) backend.push(request.url());
   });
   await page.goto(path + "?email=private@example.com&order=secret");
   await expect.poll(async () => (await pageViews(page)).length).toBe(1);
@@ -435,4 +436,49 @@ for (const path of ["/support", "/privacy", "/terms"]) test(`informational page 
   await expect(page.getByRole("button", { name: "Usage settings" })).toHaveCount(0);
   expect(await pageViews(page)).toHaveLength(0);
   expect(backend).toEqual([]);
+});
+
+
+test("delayed policy and Google blocking preserve original page, time and source in durable raw events", async({page})=>{
+  let release!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;});
+  await setup(page,gate);
+  const raw:any[]=[];
+  await page.route("**/collectWebJourney",async route=>{raw.push(route.request().postDataJSON());await route.fulfill({json:{disposition:"accepted"},headers:{"Access-Control-Allow-Origin":"*"}});});
+  await page.goto("/?utm_source=instagram&utm_medium=social&utm_campaign=Fall%20Launch&utm_content=Reel%201");
+  await page.getByRole("button",{name:"Men’s styling",exact:true}).click();
+  const beforeRelease=Date.now();
+  await page.evaluate(()=>{window.history.replaceState(null,'','/support');});
+  release();
+  await expect.poll(()=>raw.some(row=>row.name==='styling_selected')).toBe(true);
+  const action=raw.find(row=>row.name==='styling_selected');
+  expect(action.at).toBeLessThanOrEqual(beforeRelease);expect(action.pagePath).toBe('/');
+  expect(action.context.attribution).toMatchObject({source:'instagram',campaign:'fall_launch',content:'reel_1'});
+  expect(new Set(raw.map(row=>row.context.clientId)).size).toBe(1);
+  expect(new Set(raw.map(row=>row.context.sessionId)).size).toBe(1);
+  const ga=(await records(page)).find(row=>row[1]==='styling_selected')![2] as any;
+  expect(ga.event_id).toBe(action.id);expect(ga.occurred_at_ms).toBe(action.at);expect(ga.page_location).toBe('https://beanywhere.app/');
+});
+
+test("a failed policy request and document navigation preserve pending early actions without sending before approval",async({page})=>{
+  await setup(page);
+  let fail=true; const raw:any[]=[];
+  await page.route("**/getWebAnalyticsPolicy",route=>fail?route.abort():route.fulfill({json:{available:true,mode:'automatic'},headers:{'Access-Control-Allow-Origin':'*'}}));
+  await page.route("**/collectWebJourney",async route=>{raw.push(route.request().postDataJSON());await route.fulfill({json:{disposition:'accepted'},headers:{'Access-Control-Allow-Origin':'*'}});});
+  await page.goto('/?utm_source=reddit&utm_medium=social');
+  await page.getByRole('button',{name:'Men’s styling',exact:true}).click();
+  expect(raw).toHaveLength(0);
+  fail=false;await page.goto('/support');
+  await expect.poll(()=>raw.some(row=>row.name==='styling_selected')).toBe(true);
+  expect(raw.find(row=>row.name==='styling_selected').pagePath).toBe('/');
+  expect(raw.find(row=>row.name==='styling_selected').context.sessionAttribution.source).toBe('reddit');
+});
+
+test("first-party delivery retries the same raw event after a navigation",async({page})=>{
+  await setup(page);const raw:any[]=[];let accept=false;
+  await page.route('**/collectWebJourney',async route=>{raw.push(route.request().postDataJSON()); if(!accept)await route.abort();else await route.fulfill({json:{disposition:'accepted'},headers:{'Access-Control-Allow-Origin':'*'}});});
+  await page.goto('/');
+  await expect.poll(()=>raw.length).toBeGreaterThan(0);
+  const first=raw[0];accept=true;await page.goto('/support');
+  await expect.poll(()=>raw.filter(row=>row.id===first.id).length).toBeGreaterThan(1);
+  const replay=[...raw].reverse().find(row=>row.id===first.id);expect(replay).toEqual(first);
 });

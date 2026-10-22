@@ -11,7 +11,7 @@ export function analyticsContext(options?:{active?:boolean}):AnalyticsContext;
 export function trackWeb(name:string,params?:Record<string,unknown>,eventId?:string):void;
 export function setAnalyticsAllowed(enabled:boolean):void;
 export function onAnalyticsPreference(fn:(enabled:boolean)=>void|Promise<void>):void;
-export function setEventTransport(fn:(row:{id:string;name:string;params:Record<string,string|number|boolean>;at:number})=>Promise<{disposition?:string}>):void;
+export function setEventTransport(fn:(row:{id:string;name:string;params:Record<string,string|number|boolean>;at:number;context?:AnalyticsContext})=>Promise<{disposition?:string}>):void;
 export function queueStudioEvent(name:string,params:Record<string,string|number|boolean>,eventId?:string):void;
 export function initAnalytics(options?:{enabled?:boolean}):void;
 

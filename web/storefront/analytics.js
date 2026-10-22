@@ -1,4 +1,4 @@
-import { createEventOutbox } from "./event-outbox.js";
+import { createEventOutbox, createPersistentEventStore } from "./event-outbox.js";
 // Shared public-site / Studio measurement. No form values, raw URLs, email or photo data.
 import { onCLS, onINP, onLCP, onFCP, onTTFB } from "web-vitals";
 import {
@@ -7,7 +7,7 @@ import {
   directAttribution,
 } from "./acquisition.js";
 export const MEASUREMENT_ID = "G-2VT9EWH1B5";
-export const ANALYTICS_VERSION = "web-20261020-5";
+export const ANALYTICS_VERSION = "web-20261021-6";
 const KEY = "beanywhere-measurement-v1";
 const CHOICE = "beanywhere-analytics-choice";
 const TIMEOUT = 30 * 60000;
@@ -146,9 +146,29 @@ const cleanAttribution = (value) =>
         : fallback,
     ]),
   );
+const EARLY = "beanywhere-analytics-pending-v1";
+function pendingRead() {
+  try { return JSON.parse(window.sessionStorage.getItem(EARLY) || "[]"); } catch { return []; }
+}
+function pendingSave() {
+  try { window.sessionStorage.setItem(EARLY, JSON.stringify(earlyEvents.slice(-100))); } catch {}
+}
 const earlyEvents = [];
+const eventContexts = new Map();
+function eventSnapshot() {
+  return { at: Date.now(), pagePath: safePage(window.location.href), referrer: safeReferrer(),
+    attribution: currentAttribution(), isTest: testTraffic(), activePage: document.visibilityState === "visible" && document.hasFocus(),
+    arrival: captureAttribution({ url: window.location.href, referrer: document.referrer }),
+    ...(analyticsAllowed() ? { context: analyticsContext({ active: false }) } : memory ? {context:{...memory}} : {}) };
+}
+function rememberEarly(name, params, eventId) {
+  if (!starting || policyDenied || analyticsPreference() === false || earlyEvents.length >= 100) return;
+  earlyEvents.push({ name, params: safeParams(params), eventId, snapshot: eventSnapshot() });
+  pendingSave();
+}
 const earlyStudioEvents = [];
 let policy = { available: false, mode: "choice" };
+let policyDenied = false;
 let memory,
   initialized = false,
   loaded = false,
@@ -276,7 +296,7 @@ function gtag(...args) {
   window.dataLayer ??= [];
   window.dataLayer.push(arguments);
 }
-function load() {
+function load(state) {
   if (loaded || !analyticsAllowed()) return;
   loaded = true;
   gtag("consent", "default", {
@@ -286,8 +306,7 @@ function load() {
     ad_personalization: "denied",
   });
   gtag("js", new Date());
-  const state = identity();
-  configureSession(state);
+  configureSession(state || identity());
   const script = document.createElement("script");
   script.async = true;
   script.src = "https://www.googletagmanager.com/gtag/js?id=" + MEASUREMENT_ID;
@@ -347,16 +366,16 @@ function emitWeb(name, params, eventId = crypto.randomUUID(), snapshot) {
   if (!EVENTS.has(name)) return;
   if (!initialized) {
     if (starting && analyticsPreference() !== false && earlyEvents.length < 100)
-      earlyEvents.push({ name, params: safeParams(params), eventId });
+      rememberEarly(name, params, eventId);
     return;
   }
-  if (!analyticsAllowed()) return;
+  if (!analyticsAllowed()) { if (!policy.available) rememberEarly(name,params,eventId); return; }
   try {
-    load();
-    const state = identity({ active: !["web_vital", "web_error"].includes(name) &&
+    const state = snapshot?.context || identity({ active: !["web_vital", "web_error"].includes(name) &&
       (document.visibilityState === "visible" || name === "engagement_tick") }),
-      last = currentAttribution(),
+      last = snapshot?.attribution || currentAttribution(),
       session = state.sessionAttribution || directAttribution();
+    load(state);
     const pagePath = snapshot?.pagePath ?? safePage(window.location.href);
     if (name === "page_view" && lastPage === pagePath && lastPageSession === state.sessionId)
       return;
@@ -366,14 +385,16 @@ function emitWeb(name, params, eventId = crypto.randomUUID(), snapshot) {
     if (!snapshot && lastPage && lastPage !== pagePath) referrer = "https://beanywhere.app" + lastPage;
     else if (startsPage && lastPageSession && lastPageSession !== state.sessionId) referrer = "";
     if (startsPage) pageReferrer = referrer;
-    if (!snapshot && (configuredSession !== state.sessionId || configuredPage !== pagePath || configuredReferrer !== referrer))
+    if ((configuredSession !== state.sessionId || configuredPage !== pagePath || configuredReferrer !== referrer))
       configureSession(state, pagePath, referrer);
     const values = {
       event_id: eventId,
       session_id: state.gaSessionId,
       release: ANALYTICS_VERSION,
       page_location: "https://beanywhere.app" + pagePath,
-      page_title: "BeAnywhere " + pagePath,
+      occurred_at_ms: snapshot?.at || Date.now(),
+      event_origin: "browser",
+      active_page: (snapshot?.activePage ?? (document.visibilityState === "visible" && document.hasFocus())) ? 1 : 0,
       page_referrer: referrer,
       source: last.source,
       medium: last.medium,
@@ -386,31 +407,38 @@ function emitWeb(name, params, eventId = crypto.randomUUID(), snapshot) {
       session_source: session.source,
       session_medium: session.medium,
       session_campaign: session.campaign,
-      is_test: testTraffic() ? 1 : 0,
+      is_test: (snapshot?.isTest ?? testTraffic()) ? 1 : 0,
     };
     if (startsPage) {
       lastPage = pagePath;
       lastPageSession = state.sessionId;
       depths.clear();
       // A resumed session must have a visible entry page before its actions.
-      if (name !== "page_view") gtag("event", "page_view", {
-        ...values, event_id: crypto.randomUUID(),
-        surface: pagePath.startsWith("/studio") ? "studio" : "storefront",
-      });
+      if (name !== "page_view") {
+        const pageId = crypto.randomUUID();
+        const pageParams = { surface: pagePath.startsWith("/studio") ? "studio" : "storefront" };
+        gtag("event", "page_view", { ...values, event_id: pageId, ...pageParams });
+        journalEvent("page_view", pageParams, pageId, state, last, pagePath, referrer, values.occurred_at_ms, values.is_test, values.active_page);
+      }
     }
     // Google maintains engagement_time_msec itself. Our visible-page timer uses
     // duration_ms so it cannot add the same interval to Google's clock twice.
     gtag("event", name, { ...safeParams(params), ...values });
+    journalEvent(name, safeParams(params), eventId, state, last, pagePath, referrer, values.occurred_at_ms, values.is_test, values.active_page);
   } catch {
     /* Measurement must never stop the product. */
   }
 }
 export function setAnalyticsAllowed(enabled) {
   save(CHOICE, !!enabled);
+  if (enabled && analyticsAllowed()) policyDenied=false;
+  if (enabled && !initialized && analyticsAllowed()) startAnalytics();
   window["ga-disable-" + MEASUREMENT_ID] = !analyticsAllowed();
   if (!enabled) {
     outbox.clear();
+    journal.clear();
     earlyEvents.length = 0;
+    pendingSave();
     earlyStudioEvents.length = 0;
     if (loaded) gtag("consent", "update", { analytics_storage: "denied" });
     for (const cookie of document.cookie.split(";")) {
@@ -435,36 +463,62 @@ export function onAnalyticsPreference(fn) {
 }
 // Backend queue supplements selected Studio events. Bounded, stable IDs, original time, retries.
 const QUEUE = "beanywhere-web-event-outbox-v1";
-const outbox = createEventOutbox({
-  read: () => read(QUEUE),
-  write: (rows) => save(QUEUE, rows),
-  allowed: analyticsAllowed,
-});
+function durableQueue(key) {
+  const saved=createPersistentEventStore({prefix:key,storage,legacy:()=>read(key),clearLegacy:()=>save(key,[])});
+  return createEventOutbox({read:saved.read,put:saved.put,remove:saved.remove,clearStorage:saved.clear,allowed:analyticsAllowed});
+}
+const outbox = durableQueue(QUEUE);
+// Independent browser observations; never purchase authority. Keep original IDs/time
+// across page navigation, temporary offline periods, and Google being blocked.
+const JOURNAL = "beanywhere-journey-outbox-v1";
+const journal = durableQueue(JOURNAL);
+function journalEvent(name, params, id, state, attribution, pagePath, referrer, at, isTest, activePage) {
+  if (!UUID.test(id) || name === "web_vital") return;
+  const context = { enabled: true, version: ANALYTICS_VERSION, clientId: state.clientId,
+      sessionId: state.sessionId, gaSessionId: state.gaSessionId, firstSeenAtMs: state.firstSeenAtMs,
+      firstAttribution: state.firstAttribution, sessionAttribution: state.sessionAttribution, attribution };
+  eventContexts.set(id, { context, at });
+  if (eventContexts.size > 100) eventContexts.delete(eventContexts.keys().next().value);
+  journal.enqueue({ id, name, params, at, pagePath, referrer, isTest: !!isTest, activePage: !!activePage, context, explicitConsent: analyticsPreference() === true });
+}
+function connectJournal() {
+  journal.setTransport(async row => {
+    const response = await fetch('https://us-central1-bethere-3d7de.cloudfunctions.net/collectWebJourney', {
+      method: 'POST', credentials: 'omit', keepalive: true,
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(row), signal: AbortSignal.timeout(10000),
+    });
+    if (!response.ok) throw new Error('Measurement deferred');
+    return response.json();
+  });
+}
 export function setEventTransport(fn) {
   outbox.setTransport(fn);
 }
-export function queueStudioEvent(name, params, eventId = crypto.randomUUID()) {
+export function queueStudioEvent(name, params, eventId = crypto.randomUUID(), at = Date.now()) {
   if (!initialized) {
     if (
       starting &&
       analyticsPreference() !== false &&
       earlyStudioEvents.length < 100
     )
-      earlyStudioEvents.push({ name, params, eventId });
+      earlyStudioEvents.push({ name, params, eventId, at: Date.now() });
     return;
   }
   if (!analyticsAllowed()) return;
-  const context = analyticsContext({ active: false });
+  const saved = eventContexts.get(eventId);
+  const context = saved?.context || analyticsContext({ active: false });
   outbox.enqueue({
     id: eventId,
     name,
     params: { ...params, source: "web_studio", sessionId: context.sessionId },
-    at: Date.now(),
+    at: saved?.at || at, context,
   });
 }
-const flushEvents = () => outbox.flush();
-let starting = false, policyCheckedAt=0;
+const flushEvents = () => Promise.all([outbox.flush(), journal.flush()]);
+let starting = false, policyCheckedAt=0, policyRefreshing=false;
 async function refreshPolicy() {
+  if (policyRefreshing) return;
+  policyRefreshing=true;
   const before=analyticsAllowed();
   try {
     const response=await fetch('https://us-central1-bethere-3d7de.cloudfunctions.net/getWebAnalyticsPolicy', {credentials:'omit',signal:AbortSignal.timeout(5000)});
@@ -472,23 +526,58 @@ async function refreshPolicy() {
     const value=await response.json();
     policy={available:value.available===true,mode:value.mode==='automatic'?'automatic':'choice'};
     policyCheckedAt=Date.now();
-    if(!initialized)startAnalytics();
+    policyDenied=!analyticsAllowed();
+    if(analyticsAllowed()) { if(!initialized)startAnalytics(); else replayPending(); }
+    if(!analyticsAllowed()) { earlyEvents.length=0; earlyStudioEvents.length=0; pendingSave(); outbox.clear(); journal.clear(); }
   }catch{
-    policy={available:false,mode:'choice'};earlyEvents.length=0;earlyStudioEvents.length=0;
+    // A temporary policy/network failure pauses sending. It is not withdrawal.
+    policy={available:false,mode:'choice'};
+    setTimeout(()=>void refreshPolicy(),30000);
   }
+  policyRefreshing=false;
   window['ga-disable-'+MEASUREMENT_ID]=!analyticsAllowed();
   if(before!==analyticsAllowed()) {
     if(loaded)gtag('consent','update',{analytics_storage:analyticsAllowed()?'granted':'denied'});
-    if(analyticsAllowed()){load();void flushEvents();}
-    else outbox.clear();
+    if(analyticsAllowed()){load(memory);void flushEvents();}
+    // Queues survive a transient fetch failure; an explicit policy denial clears above.
     window.dispatchEvent(new Event('beanywhere-analytics-choice'));
   }
 }
 export function initAnalytics({enabled=true}={}) {
   if(initialized||starting||!enabled||typeof window==='undefined')return;
-  starting=true;void refreshPolicy();
+  starting=true;
+  if (analyticsPreference() !== false) {
+    const pending = pendingRead();
+    for (const row of Array.isArray(pending) ? pending.slice(-100) : []) {
+      if (EVENTS.has(row?.name) && UUID.test(row.eventId || '') && row.snapshot?.at > Date.now()-86400000 && row.snapshot.at <= Date.now())
+        earlyEvents.push({ ...row, params: safeParams(row.params) });
+    }
+    rememberEarly('page_view', { surface: safePage(window.location.href).startsWith('/studio') ? 'studio' : 'storefront' }, crypto.randomUUID());
+  } else { earlyEvents.length=0; pendingSave(); }
+  window.addEventListener('hashchange',()=>{ if(!initialized) rememberEarly('page_view', {surface:'studio'},crypto.randomUUID()); });
+  void refreshPolicy();
   const refresh=()=>{if(document.visibilityState==='visible' && Date.now()-policyCheckedAt>=300000)void refreshPolicy();};
   setInterval(refresh,300000);document.addEventListener('visibilitychange',refresh);window.addEventListener('online',refresh);
+}
+function replayPending() {
+  const pending = earlyEvents.splice(0);
+  pendingSave();
+  if (!pending.length) return;
+  // Resolve the timeline before emitting; loading Google must not move the
+  // shared session's activity clock between two queued historical actions.
+  let replayState = read(KEY) || memory;
+  for (const event of pending) {
+    const snapshot = event.snapshot;
+    if (!snapshot.context) {
+      replayState = nextIdentity(replayState, {
+        now: Math.max(snapshot.at, replayState?.lastActiveAtMs || 0),
+        uuid:()=>crypto.randomUUID(), attribution:snapshot.arrival,
+      });
+      snapshot.context = { ...replayState };
+    }
+  }
+  if (replayState) { memory=replayState; save(KEY,replayState); arrivalUsed=true; }
+  for (const event of pending) emitWeb(event.name,event.params,event.eventId,event.snapshot);
 }
 function startAnalytics() {
   if (initialized) return;
@@ -525,13 +614,13 @@ function startAnalytics() {
     // opted-out interval in engagement or silently skip this page's funnel entry.
     focusedAt = allowed && inFocus() ? performance.now() : null;
     lastPage = "";
-    if (allowed) page();
+    if (allowed && inFocus()) page();
   });
+  connectJournal();
+  replayPending();
   page();
-  for (const event of earlyEvents.splice(0))
-    trackWeb(event.name, event.params, event.eventId);
   for (const event of earlyStudioEvents.splice(0))
-    queueStudioEvent(event.name, event.params, event.eventId);
+    queueStudioEvent(event.name, event.params, event.eventId, event.at);
   window.dispatchEvent(new Event("beanywhere-analytics-choice"));
   window.addEventListener("hashchange", page);
   const resume = () => {
@@ -562,7 +651,7 @@ function startAnalytics() {
     if (event.key === CHOICE) {
       window["ga-disable-" + MEASUREMENT_ID] = !analyticsAllowed();
       if (!analyticsAllowed()) {
-        outbox.clear();
+        outbox.clear(); journal.clear(); earlyEvents.length=0; pendingSave();
         if (loaded) gtag("consent", "update", { analytics_storage: "denied" });
       } else {
         if (loaded) gtag("consent", "update", { analytics_storage: "granted" });
