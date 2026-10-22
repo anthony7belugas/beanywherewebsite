@@ -5,9 +5,10 @@ const m = vi.hoisted(() => ({
   app: vi.fn(), appCheck: vi.fn(), token: vi.fn(), persistence: vi.fn(),
   signin: vi.fn(), claims: vi.fn(), callable: vi.fn(), call: vi.fn(),
   identity: vi.fn(), adapter: vi.fn(),
+  auth: { currentUser: null as { uid: string } | null, authStateReady: vi.fn() },
 }));
 vi.mock("firebase/app", () => ({ getApps: () => m.apps, initializeApp: m.app }));
-vi.mock("firebase/auth", () => ({ getAuth: (app: unknown) => ({ app }),
+vi.mock("firebase/auth", () => ({ getAuth: () => m.auth,
   getIdTokenResult: m.claims, indexedDBLocalPersistence: "indexedDB",
   setPersistence: m.persistence, signInWithCustomToken: m.signin,
 }));
@@ -32,9 +33,13 @@ beforeEach(() => {
   m.app.mockImplementation((options, name) => { const app = { name, options }; m.apps.push(app); return app; });
   m.appCheck.mockReturnValue({}); m.token.mockResolvedValue({ token: "app-check-token" });
   m.identity.mockResolvedValue("a".repeat(64));
+  m.auth.currentUser = null;
+  m.auth.authStateReady.mockResolvedValue(undefined);
   m.callable.mockImplementation((_fn, name) => (data: any) => name === "webStudio" ? m.call(data.operation, data.input) : m.call(name, data));
   m.call.mockResolvedValue({ data: session });
-  m.signin.mockResolvedValue({ user: { uid } });
+  m.signin.mockImplementation(async () => {
+    const user = { uid }; m.auth.currentUser = user; return { user };
+  });
   m.claims.mockResolvedValue({ claims: { platform: "web", webAppId: appId,
     webSessionHandle: "b".repeat(40), deviceHandle: "b".repeat(40), deviceRestricted: false } });
   m.adapter.mockReturnValue({ session: { uid } });
@@ -46,7 +51,7 @@ it("uses separate Firebase auth and one authenticated bootstrap for concurrent c
   const [a, b] = await Promise.all([connectWebStudio(config), connectWebStudio(config)]);
   expect(a).toBe(b);
   expect(m.app).toHaveBeenCalledExactlyOnceWith(config.firebase, "beanywhere-web-studio");
-  expect(m.call).toHaveBeenCalledExactlyOnceWith("authWithWebSession", { secret: "a".repeat(64) });
+  expect(m.call).toHaveBeenCalledExactlyOnceWith("authWithWebSession", { secret: "a".repeat(64), reuseExistingAuth: false });
   expect(m.signin).toHaveBeenCalledTimes(1);
   const dependencies = m.adapter.mock.calls[0][0];
   expect(dependencies.session).not.toHaveProperty("customToken");
@@ -94,4 +99,61 @@ it("rejects the old web app and incomplete configuration before any network work
     appId: "1:151223255006:web:76deb7b1d38f351582674f" } })).toThrow("not configured");
   expect(() => connectWebStudio({ ...config, appCheckSiteKey: "" })).toThrow("not configured");
   expect(m.identity).not.toHaveBeenCalled(); expect(m.app).not.toHaveBeenCalled();
+});
+
+it("checks admission but skips a second sign-in for the same saved browser", async () => {
+  const user = { uid };
+  m.auth.authStateReady.mockImplementation(async () => { m.auth.currentUser = user; });
+  m.call.mockResolvedValue({ data: { uid, webAppId: appId, capabilityVersion: 1, reuseExistingAuth: true } });
+  const { connectWebStudio } = await import("../integration/firebase-bootstrap");
+  await connectWebStudio(config);
+  expect(m.call).toHaveBeenCalledExactlyOnceWith("authWithWebSession", {
+    secret: "a".repeat(64), reuseExistingAuth: true,
+  });
+  expect(m.claims).toHaveBeenCalledWith(user);
+  expect(m.signin).not.toHaveBeenCalled();
+  expect(m.adapter).toHaveBeenCalledOnce();
+});
+
+it("starts attestation and saved sign-in while local identity storage is still pending", async () => {
+  let resolveIdentity!: (secret: string) => void;
+  m.identity.mockReturnValue(new Promise<string>(resolve => { resolveIdentity = resolve; }));
+  const { connectWebStudio } = await import("../integration/firebase-bootstrap");
+  const connected = connectWebStudio(config);
+  await vi.waitFor(() => expect(m.auth.authStateReady).toHaveBeenCalledOnce());
+  expect(m.token).toHaveBeenCalledOnce();
+  expect(m.call).not.toHaveBeenCalled();
+  resolveIdentity("a".repeat(64));
+  await connected;
+});
+
+it("accepts an older server's custom token when a saved sign-in exists", async () => {
+  m.auth.currentUser = { uid };
+  const { connectWebStudio } = await import("../integration/firebase-bootstrap");
+  await connectWebStudio(config);
+  expect(m.signin).toHaveBeenCalledExactlyOnceWith(m.auth, "server-custom-token");
+});
+
+it.each(["missing", "different", "changed", "claims"])(
+  "rejects unsafe reuse when the saved sign-in is %s", async failure => {
+    if (failure !== "missing") m.auth.currentUser = { uid: failure === "different" ? `w_${"c".repeat(40)}` : uid };
+    m.call.mockImplementation(async () => {
+      if (failure === "changed") m.auth.currentUser = { uid };
+      return { data: { uid, webAppId: appId, capabilityVersion: 1, reuseExistingAuth: true } };
+    });
+    if (failure === "claims") m.claims.mockResolvedValue({ claims: { platform: "native" } });
+    const { connectWebStudio } = await import("../integration/firebase-bootstrap");
+    await expect(connectWebStudio(config)).rejects.toThrow("could not verify");
+    expect(m.adapter).not.toHaveBeenCalled();
+    expect(m.signin).not.toHaveBeenCalled();
+  },
+);
+
+it("cannot reuse saved credentials when fresh server admission fails", async () => {
+  m.auth.currentUser = { uid };
+  m.call.mockRejectedValue(new Error("This browser session is restricted."));
+  const { connectWebStudio } = await import("../integration/firebase-bootstrap");
+  await expect(connectWebStudio(config)).rejects.toThrow("restricted");
+  expect(m.adapter).not.toHaveBeenCalled();
+  expect(m.signin).not.toHaveBeenCalled();
 });

@@ -1,6 +1,6 @@
 import { httpsCallable, type Functions } from "firebase/functions";
 
-// These small operations share a warm service. Photo decoding remains isolated;
+// These small operations reuse one service that scales to zero. Photo decoding stays isolated;
 // all operations still execute their original server admission/payment checks.
 const shared = new Set([
   "authWithWebSession", "listWebGalleries", "recoverWebGalleries",

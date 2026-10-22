@@ -40,27 +40,46 @@ async function connect(config: StudioFirebaseConfig) {
   if (app.options.appId !== config.firebase.appId || app.options.projectId !== config.firebase.projectId) {
     throw new Error("The studio connection does not match this website.");
   }
-  const secret = await browserIdentity();
   appCheck ??= initializeAppCheck(app, {
     provider: new ReCaptchaEnterpriseProvider(config.appCheckSiteKey),
     isTokenAutoRefreshEnabled: true,
   });
-  // No anonymous-auth, debug-token, or unenforced fallback when attestation is unavailable.
-  await getToken(appCheck);
   const auth = getAuth(app);
-  await setPersistence(auth, indexedDBLocalPersistence);
+  // Local storage, saved sign-in and browser attestation are independent. Finish
+  // all three before contacting the admission service, without serial waits.
+  const [secret] = await Promise.all([
+    browserIdentity(),
+    getToken(appCheck),
+    (async () => {
+      await setPersistence(auth, indexedDBLocalPersistence);
+      await auth.authStateReady();
+    })(),
+  ]);
+  // No anonymous-auth, debug-token, or unenforced fallback when attestation is unavailable.
+  const existingUser = auth.currentUser;
   const functions = getFunctions(app, config.functionsRegion);
-  const response = await studioCallable<{ secret: string }, WebSession & { customToken: string }>(
+  const response = await studioCallable<{ secret: string; reuseExistingAuth: boolean },
+    WebSession & { customToken?: string; reuseExistingAuth?: true }>(
     functions, "authWithWebSession", 30000,
-  )({ secret });
+  )({ secret, reuseExistingAuth: !!existingUser });
   const session = response.data;
-  if (!validWebSession(session) || session.webAppId !== config.firebase.appId ||
-      typeof session.customToken !== "string" || !session.customToken) {
+  if (!validWebSession(session) || session.webAppId !== config.firebase.appId) {
     throw new Error("The studio could not verify your browser session.");
   }
-  const { user } = await signInWithCustomToken(auth, session.customToken);
+  let user;
+  if (session.reuseExistingAuth === true) {
+    if (!existingUser || auth.currentUser !== existingUser || existingUser.uid !== session.uid) {
+      throw new Error("The studio could not verify your sign-in.");
+    }
+    user = existingUser;
+  } else {
+    if (typeof session.customToken !== "string" || !session.customToken) {
+      throw new Error("The studio could not verify your browser session.");
+    }
+    ({ user } = await signInWithCustomToken(auth, session.customToken));
+  }
   const token = await getIdTokenResult(user);
-  if (!admittedWebClaims(user.uid, token.claims, session)) {
+  if (auth.currentUser !== user || !admittedWebClaims(user.uid, token.claims, session)) {
     throw new Error("The studio could not verify your sign-in.");
   }
   const create = studioCallable<{ orderId: string; email: string; attribution?: Acquisition; analytics?: ReturnType<typeof analyticsContext> }, WebCheckout>(
