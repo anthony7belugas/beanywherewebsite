@@ -573,3 +573,61 @@ for (const withdraw of [false, true]) test(`a temporary policy outage preserves 
   expect(studio.id).toBe(browser.id); expect(studio.at).toBe(browser.at);
   expect(studio.context).toEqual(browser.context); expect(studio.params.isTest).toBe(true);
 });
+
+test('a delayed page retains its original session when another tab starts a later visit',async({page,context})=>{
+  await page.clock.install(); await page.clock.setFixedTime(new Date()); await setup(page); await page.goto('/?utm_source=reddit');
+  await expect.poll(async()=> (await pageViews(page)).length).toBe(1);
+  const first=await page.evaluate(()=>JSON.parse(localStorage.getItem('beanywhere-measurement-v1')!));
+  let release!:()=>void; const gate=new Promise<void>(r=>{release=r;});
+  await page.route('**/getWebAnalyticsPolicy',async route=>{await gate; await route.fulfill({json:{available:true,mode:'automatic'},headers:{'Access-Control-Allow-Origin':'*'}});});
+  const raw:any[]=[];
+  await page.route('**/collectWebJourney',async route=>{raw.push(route.request().postDataJSON());await route.fulfill({json:{disposition:'accepted'},headers:{'Access-Control-Allow-Origin':'*'}});});
+  await page.goto('/support');
+  const earlyAt=await page.evaluate(()=>Date.now());
+  const later=await context.newPage(); await later.clock.install(); await later.clock.setFixedTime(new Date(earlyAt+31*60000)); await setup(later);
+  await later.route('**/collectWebJourney',async route=>{raw.push(route.request().postDataJSON());await route.fulfill({json:{disposition:'accepted'},headers:{'Access-Control-Allow-Origin':'*'}});});
+  await later.goto('/?utm_source=instagram');
+  await expect.poll(async()=> (await pageViews(later)).length).toBe(1);
+  const second=await later.evaluate(()=>JSON.parse(localStorage.getItem('beanywhere-measurement-v1')!));
+  expect(second.sessionId).not.toBe(first.sessionId);
+  await page.clock.setFixedTime(new Date(earlyAt+31*60000)); release();
+  await expect.poll(()=>raw.some(r=>r.name==='page_view'&&r.pagePath==='/support'&&r.at<=earlyAt)).toBe(true);
+  const early=raw.find(r=>r.name==='page_view'&&r.pagePath==='/support'&&r.at<=earlyAt);
+  expect(early.context.sessionId).toBe(first.sessionId);
+  expect(early.context.gaSessionId*1000).toBeLessThanOrEqual(early.at+300000);
+  const saved=await page.evaluate(()=>JSON.parse(localStorage.getItem('beanywhere-measurement-v1')!));
+  expect(saved.sessionId).toBe(second.sessionId);
+  await later.close();
+});
+
+for(const withdraw of [false,true]) test(`pending Studio events survive navigation unless permission was withdrawn: ${withdraw}`,async({page})=>{
+  await setup(page); let fail=true; const raw:any[]=[];
+  await page.route('**/getWebAnalyticsPolicy',route=>fail?route.abort():route.fulfill({json:{available:true,mode:'automatic'},headers:{'Access-Control-Allow-Origin':'*'}}));
+  await page.route('**/collectWebJourney',async route=>{raw.push(route.request().postDataJSON());await route.fulfill({json:{disposition:'accepted'},headers:{'Access-Control-Allow-Origin':'*'}});});
+  await page.goto('/?ba_test=1');
+  const id=await page.evaluate(async modulePath=>{
+    const a=await import(/* @vite-ignore */ modulePath),id=crypto.randomUUID();
+    a.trackWeb('pack_opened',{packId:'paris'},id);a.queueStudioEvent('pack_opened',{packId:'paris'},id);return id;
+  },analyticsModule);
+  if(withdraw) await setPreference(page,false);
+  await page.goto('/support');
+  await page.evaluate(async modulePath=>{
+    const a=await import(/* @vite-ignore */ modulePath);(window as any).auditStudioRows=[];
+    a.setEventTransport(async(row:any)=>{(window as any).auditStudioRows.push(row);return {disposition:'accepted'};});
+  },analyticsModule);
+  fail=false; await page.evaluate(()=>window.dispatchEvent(new Event('online')));
+  if(withdraw) {
+    await setPreference(page,true);
+    await expect.poll(()=>page.evaluate(()=>(window as any)['ga-disable-G-2VT9EWH1B5'])).toBe(false);
+    expect(raw.some(r=>r.id===id)).toBe(false);
+    expect(await page.evaluate(()=>(window as any).auditStudioRows)).toEqual([]);
+    expect(await page.evaluate(()=>JSON.parse(sessionStorage.getItem('beanywhere-studio-pending-v1')!))).toEqual([]);
+    return;
+  }
+  await expect.poll(()=>raw.some(r=>r.id===id)).toBe(true);
+  await expect.poll(()=>page.evaluate(()=>(window as any).auditStudioRows.length)).toBe(1);
+  const studio=(await page.evaluate(()=>(window as any).auditStudioRows))[0],browser=raw.find(r=>r.id===id);
+  expect(studio.id).toBe(id);expect(studio.at).toBe(browser.at);expect(studio.context).toEqual(browser.context);
+  expect(studio.params.isTest).toBe(true);
+  expect(await page.evaluate(()=>JSON.parse(sessionStorage.getItem('beanywhere-studio-pending-v1')!))).toEqual([]);
+});

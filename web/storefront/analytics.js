@@ -7,7 +7,7 @@ import {
   directAttribution,
 } from "./acquisition.js";
 export const MEASUREMENT_ID = "G-2VT9EWH1B5";
-export const ANALYTICS_VERSION = "web-20261021-9";
+export const ANALYTICS_VERSION = "web-20261021-10";
 const KEY = "beanywhere-measurement-v1";
 const CHOICE = "beanywhere-analytics-choice";
 const TIMEOUT = 30 * 60000;
@@ -147,11 +147,13 @@ const cleanAttribution = (value) =>
     ]),
   );
 const EARLY = "beanywhere-analytics-pending-v1";
-function pendingRead() {
-  try { return JSON.parse(window.sessionStorage.getItem(EARLY) || "[]"); } catch { return []; }
+const EARLY_STUDIO = "beanywhere-studio-pending-v1";
+function pendingRead(key = EARLY) {
+  try { return JSON.parse(window.sessionStorage.getItem(key) || "[]"); } catch { return []; }
 }
 function pendingSave() {
   try { window.sessionStorage.setItem(EARLY, JSON.stringify(earlyEvents.slice(-100))); } catch {}
+  try { window.sessionStorage.setItem(EARLY_STUDIO, JSON.stringify(earlyStudioEvents.slice(-100))); } catch {}
 }
 const earlyEvents = [];
 const eventContexts = new Map();
@@ -160,10 +162,10 @@ function eventSnapshot(name) {
     attribution: currentAttribution(), isTest: testTraffic(), activePage: document.visibilityState === "visible" && document.hasFocus(),
     arrival: new URL(window.location.href).searchParams.has("ba_at") ? directAttribution()
       : captureAttribution({ url: window.location.href, referrer: document.referrer }),
+    // Capture an existing browser's context before another tab can advance it.
     // A temporary policy fetch failure pauses delivery, not the local visit
-    // clock. A real action after inactivity must retain its new session now;
-    // copying the old memory would attach it to the preceding visit on replay.
-    ...(analyticsAllowed() ? { context: analyticsContext({ active: false }) } : memory ? {context:{...identity({
+    // clock. New identities still wait for collection permission.
+    ...(analyticsAllowed() ? { context: analyticsContext({ active: false }) } : (memory || ownerBrowserId()) ? {context:{...identity({
       active: !["web_vital", "web_error"].includes(name) && document.visibilityState === "visible",
     })}} : {}) };
 }
@@ -445,8 +447,8 @@ export function setAnalyticsAllowed(enabled) {
     outbox.clear();
     journal.clear();
     earlyEvents.length = 0;
-    pendingSave();
     earlyStudioEvents.length = 0;
+    pendingSave();
     if (loaded) gtag("consent", "update", { analytics_storage: "denied" });
     for (const cookie of document.cookie.split(";")) {
       const name = cookie.trim().split("=")[0];
@@ -511,6 +513,7 @@ export function queueStudioEvent(name, params, eventId = crypto.randomUUID(), at
       earlyStudioEvents.push({ name, params, eventId, at,
         context: memory ? { ...memory, enabled: true, version: ANALYTICS_VERSION,
           isTest: testTraffic(), attribution: currentAttribution() } : null });
+    pendingSave();
     return;
   }
   emitStudioEvent(name, params, eventId, at);
@@ -564,8 +567,15 @@ export function initAnalytics({enabled=true}={}) {
       if (EVENTS.has(row?.name) && UUID.test(row.eventId || '') && row.snapshot?.at > Date.now()-86400000 && row.snapshot.at <= Date.now())
         earlyEvents.push({ ...row, params: safeParams(row.params) });
     }
+    const studio = pendingRead(EARLY_STUDIO);
+    for (const row of Array.isArray(studio) ? studio.slice(-100) : []) {
+      if (/^[a-z][a-z0-9_]{0,63}$/.test(row?.name || '') && UUID.test(row.eventId || '') &&
+          Number.isSafeInteger(row.at) && row.at > Date.now()-86400000 && row.at <= Date.now()+300000 &&
+          row.params && typeof row.params === 'object' && !Array.isArray(row.params))
+        earlyStudioEvents.push(row);
+    }
     rememberEarly('page_view', { surface: safePage(window.location.href).startsWith('/studio') ? 'studio' : 'storefront' }, crypto.randomUUID());
-  } else { earlyEvents.length=0; pendingSave(); }
+  } else { earlyEvents.length=0; earlyStudioEvents.length=0; pendingSave(); }
   window.addEventListener('hashchange',()=>{ if(!initialized) rememberEarly('page_view', {surface:'studio'},crypto.randomUUID()); });
   void refreshPolicy();
   const refresh=()=>{if(document.visibilityState==='visible' && Date.now()-policyCheckedAt>=300000)void refreshPolicy();};
@@ -593,6 +603,7 @@ function replayPending() {
   // including retries after startup. Reuse the journal's exact context/time.
   for (const event of earlyStudioEvents.splice(0))
     emitStudioEvent(event.name,event.params,event.eventId,event.at,event.context);
+  pendingSave();
 }
 function startAnalytics() {
   if (initialized) return;
