@@ -695,3 +695,42 @@ for(const marked of [false,true]) test(`blocked storage preserves production tes
   await expect.poll(()=>page.evaluate(()=>(window as any).studioRows.length)).toBe(1);
   expect((await page.evaluate(()=>(window as any).studioRows))[0]).toMatchObject({context:{isTest:marked},params:{isTest:marked}});
 });
+
+for(const navigate of [false,true]) test(`policy recovery preserves actual navigation without phantom page views: ${navigate}`,async({page})=>{
+  await page.clock.install(); await setup(page);
+  let fail=false; const raw:any[]=[];
+  await page.route('**/getWebAnalyticsPolicy',route=>fail?route.abort():route.fulfill({json:{available:true,mode:'automatic'},headers:{'Access-Control-Allow-Origin':'*'}}));
+  await page.route('**/collectWebJourney',async route=>{
+    raw.push(route.request().postDataJSON());
+    await route.fulfill({json:{disposition:'accepted'},headers:{'Access-Control-Allow-Origin':'*'}});
+  });
+  await page.goto('/?utm_source=reddit&ba_test=1');
+  await expect.poll(()=>raw.filter(r=>r.name==='page_view').length).toBe(1);
+  await focusState(page,true);
+  const first=raw.find(r=>r.name==='page_view');
+  fail=true; await page.clock.fastForward(5*60000);
+  await expect.poll(()=>page.evaluate(()=>(window as any)['ga-disable-G-2VT9EWH1B5'])).toBe(true);
+  const during=await page.evaluate(()=>Date.now());
+  if(navigate) {
+    await virtualPage(page,'#/upload');
+    await page.clock.runFor(1000);
+    await virtualPage(page,'#/checkout');
+  }
+  await page.clock.runFor(1000);
+  const pending=await page.evaluate(()=>JSON.parse(sessionStorage.getItem('beanywhere-analytics-pending-v1')!).filter((r:any)=>r.name==='page_view'));
+  fail=false; await page.evaluate(()=>window.dispatchEvent(new Event('online')));
+  await expect.poll(()=>page.evaluate(()=>(window as any)['ga-disable-G-2VT9EWH1B5'])).toBe(false);
+  const expected=navigate?['/','/studio/upload','/studio/checkout']:['/'];
+  await expect.poll(()=>raw.filter(r=>r.name==='page_view').map(r=>r.pagePath)).toEqual(expected);
+  expect((await pageViews(page)).map(r=>new URL(String(r.page_location)).pathname)).toEqual(expected);
+  const loads=raw.filter(r=>r.name==='page_view');
+  expect(loads.every(r=>r.context.sessionId===first.context.sessionId&&r.isTest&&r.context.isTest)).toBe(true);
+  if(navigate) {
+    expect(loads.slice(1).map(r=>[r.id,r.at])).toEqual(pending.map((r:any)=>[r.eventId,r.snapshot.at]));
+    expect(loads[1].at).toBeGreaterThanOrEqual(during);
+    expect(loads[2].at-loads[1].at).toBeGreaterThanOrEqual(1000);
+    expect(loads[1].context.sessionAttribution.source).toBe('reddit');
+    expect(loads[1].referrer).toBe('https://beanywhere.app/');
+    expect(loads[2].referrer).toBe('https://beanywhere.app/studio/upload');
+  }
+});

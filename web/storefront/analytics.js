@@ -7,7 +7,7 @@ import {
   directAttribution,
 } from "./acquisition.js";
 export const MEASUREMENT_ID = "G-2VT9EWH1B5";
-export const ANALYTICS_VERSION = "web-20261021-11";
+export const ANALYTICS_VERSION = "web-20261021-12";
 const KEY = "beanywhere-measurement-v1";
 const CHOICE = "beanywhere-analytics-choice";
 const TIMEOUT = 30 * 60000;
@@ -169,9 +169,11 @@ function eventSnapshot(name) {
       active: !["web_vital", "web_error"].includes(name) && document.visibilityState === "visible",
     })}} : {}) };
 }
-function rememberEarly(name, params, eventId) {
+function rememberEarly(name, params, eventId, navigationReferrer) {
   if (!starting || policyDenied || analyticsPreference() === false || earlyEvents.length >= 100) return;
-  earlyEvents.push({ name, params: safeParams(params), eventId, snapshot: eventSnapshot(name) });
+  const snapshot = eventSnapshot(name);
+  if (navigationReferrer !== undefined) snapshot.referrer = navigationReferrer;
+  earlyEvents.push({ name, params: safeParams(params), eventId, snapshot });
   pendingSave();
 }
 const earlyStudioEvents = [];
@@ -583,7 +585,14 @@ export function initAnalytics({enabled=true}={}) {
     }
     rememberEarly('page_view', { surface: safePage(window.location.href).startsWith('/studio') ? 'studio' : 'storefront' }, crypto.randomUUID());
   } else { earlyEvents.length=0; earlyStudioEvents.length=0; pendingSave(); }
-  window.addEventListener('hashchange',()=>{ if(!initialized) rememberEarly('page_view', {surface:'studio'},crypto.randomUUID()); });
+  window.addEventListener('hashchange',()=>{
+    if (initialized && policy.available) return;
+    const next = safePage(window.location.href);
+    const previous = [...earlyEvents].reverse().find(event => event.name === 'page_view')?.snapshot.pagePath || lastPage;
+    if (next === previous) return;
+    rememberEarly('page_view', {surface:next.startsWith('/studio')?'studio':'storefront'},crypto.randomUUID(),
+      previous ? 'https://beanywhere.app' + previous : undefined);
+  });
   void refreshPolicy();
   const refresh=()=>{if(document.visibilityState==='visible' && Date.now()-policyCheckedAt>=300000)void refreshPolicy();};
   setInterval(refresh,300000);document.addEventListener('visibilitychange',refresh);window.addEventListener('online',refresh);
@@ -641,12 +650,15 @@ function startAnalytics() {
   };
   window.addEventListener("beanywhere-analytics-choice", () => {
     const allowed = analyticsAllowed();
+    // An explicit denial starts a new measured page when permission returns.
+    // A failed refresh only pauses delivery: keep the last actual page so
+    // recovery cannot invent a page view. Check withdrawal even while paused.
+    if (!allowed && (policy.available || analyticsPreference() === false)) lastPage = "";
     if (allowed === measuring) return;
     measuring = allowed;
     // Start a measured visit when collection begins; never include the earlier
     // opted-out interval in engagement or silently skip this page's funnel entry.
     focusedAt = allowed && inFocus() ? performance.now() : null;
-    lastPage = "";
     if (allowed && inFocus()) page();
   });
   connectJournal();
