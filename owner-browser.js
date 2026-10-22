@@ -1,4 +1,4 @@
-import { ownerBrowserId, prepareOwnerBrowser } from './analytics.js?v=795e7e954d08bcbc';
+import { ownerBrowserId, prepareOwnerBrowser } from './analytics.js?v=c27a0a3cf707d67e';
 const $ = id => document.getElementById(id);
 const token = window.location.hash.slice(1);
 // The private setup token is never placed in Analytics, query strings or referrers.

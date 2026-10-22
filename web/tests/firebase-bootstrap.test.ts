@@ -52,7 +52,7 @@ it("uses separate Firebase auth and one authenticated bootstrap for concurrent c
   expect(dependencies.session).not.toHaveProperty("customToken");
   expect(dependencies.checkoutOrigins).toEqual(["https://checkout.stripe.com"]);
   await dependencies.payments.createCheckout("order-1", "customer@example.com");
-  expect(m.call).toHaveBeenLastCalledWith("createWebCheckout", { orderId: "order-1", email: "customer@example.com", analytics:{enabled:false,version:"web-20261021-7"} });
+  expect(m.call).toHaveBeenLastCalledWith("createWebCheckout", { orderId: "order-1", email: "customer@example.com", analytics:{enabled:false,version:"web-20261021-8"} });
   await dependencies.payments.getCheckout("order-1");
   expect(m.call).toHaveBeenLastCalledWith("getWebCheckoutStatus", { orderId: "order-1" });
 });

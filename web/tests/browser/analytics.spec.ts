@@ -402,6 +402,7 @@ test("blur, hide and pagehide do not count the same interval twice", async ({ pa
   await visibility(page, "hidden");
   await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true })));
   const first = await ticks(page);
+  expect(first.every(row => row.active_page === 1)).toBe(true);
   await page.clock.runFor(120000);
   expect(await ticks(page)).toEqual(first);
   await visibility(page, "visible");

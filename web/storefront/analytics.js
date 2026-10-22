@@ -7,7 +7,7 @@ import {
   directAttribution,
 } from "./acquisition.js";
 export const MEASUREMENT_ID = "G-2VT9EWH1B5";
-export const ANALYTICS_VERSION = "web-20261021-7";
+export const ANALYTICS_VERSION = "web-20261021-8";
 const KEY = "beanywhere-measurement-v1";
 const CHOICE = "beanywhere-analytics-choice";
 const TIMEOUT = 30 * 60000;
@@ -594,7 +594,7 @@ function startAnalytics() {
     if (focusedAt !== null && analyticsAllowed() && lastPage) {
       const durationMs = Math.min(30000, Math.max(0, now - focusedAt));
       if (durationMs > 0) emitWeb("engagement_tick", { durationMs }, undefined,
-        { pagePath: lastPage, referrer: pageReferrer });
+        { pagePath: lastPage, referrer: pageReferrer, activePage: true });
     }
     focusedAt = resume && analyticsAllowed() && inFocus() ? now : null;
   };
