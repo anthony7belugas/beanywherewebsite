@@ -68,6 +68,27 @@ async function galleryFixture(page: Page, options: { deadline?: number; failPrev
   await page.goto(`/#${options.route || "/gallery/experience-test"}`);
 }
 
+test("mobile gallery fetches nearby previews first and loads the rest as they approach", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await galleryFixture(page);
+  await expect(page.locator(".photo-tile").first().locator(".photo-open img")).toBeVisible();
+  const initial = await page.evaluate(() => [...new Set(Reflect.get(window, "photoRequests") as string[])]);
+  expect(initial.length).toBeGreaterThan(0);
+  expect(initial.length).toBeLessThan(12);
+  expect(initial).not.toContain("photo-11");
+  await testInfo.attach("initial-preview-requests", { body: JSON.stringify(initial), contentType: "application/json" });
+  if (process.env.STUDIO_SPEED_SCREENSHOTS) await page.screenshot({ path: `${process.env.STUDIO_SPEED_SCREENSHOTS}/gallery-${testInfo.project.name}.png` });
+  await page.locator(".photo-tile").last().scrollIntoViewIfNeeded();
+  await expect(page.locator(".photo-tile").last().locator(".photo-open img")).toBeVisible();
+  await expect.poll(() => page.evaluate(() => Reflect.get(window, "photoRequests").includes("photo-11"))).toBe(true);
+});
+
+test("gallery previews still load without viewport observer support", async ({ page }) => {
+  await page.addInitScript(() => { Reflect.deleteProperty(window, "IntersectionObserver"); });
+  await galleryFixture(page);
+  await expect(page.locator(".photo-open img")).toHaveCount(12);
+});
+
 test("save dialog keeps keyboard focus across gallery refreshes and respects an open share sheet", async ({ page }) => {
   await page.clock.install();
   await page.addInitScript(() => {

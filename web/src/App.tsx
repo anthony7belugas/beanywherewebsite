@@ -1734,7 +1734,7 @@ function Gallery({
                       aria-label={`Open ${photo.label}, take ${photo.take}`}
                       onClick={() => setLightbox(photo.slotId)}
                     >
-                      <StudioImage shootId={shoot.id} photo={photo}
+                      <StudioImage shootId={shoot.id} photo={photo} loadWhenVisible
                         previewBlob={recoveredPreviews[photo.slotId]?.path === photo.path ? recoveredPreviews[photo.slotId]?.blob : undefined}
                         onPreviewError={markPreviewError}
                         alt={`${photo.label}, take ${photo.take}${shoot.sample ? " — sample preview" : ""}`} />

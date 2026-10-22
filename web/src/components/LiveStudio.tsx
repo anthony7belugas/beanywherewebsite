@@ -58,18 +58,31 @@ export function GalleryRecovery({ email, hasShoots, onRecovered, targetShootId }
   </div>;
 }
 
-export function StudioImage({ shootId, photo, alt, previewBlob, onPreviewReady, onPreviewError }: {
+export function StudioImage({ shootId, photo, alt, previewBlob, onPreviewReady, onPreviewError, loadWhenVisible = false }: {
   shootId: string;
   photo: Photo;
   alt: string;
   previewBlob?: Blob;
   onPreviewReady?: (photo: Photo, blob: Blob) => void;
   onPreviewError?: (photo: Photo) => void;
+  loadWhenVisible?: boolean;
 }) {
   const [url, setUrl] = useState("");
   const [error, setError] = useState(false);
+  const [nearby, setNearby] = useState(() => !loadWhenVisible || typeof IntersectionObserver === "undefined");
+  const placeholder = useRef<HTMLSpanElement>(null);
   useEffect(() => {
-    if (!photo.path || !service.photoBlob) return;
+    if (nearby || !loadWhenVisible || !photo.path || !placeholder.current) return;
+    // Observe before fetching the private blob: loading="lazy" on the final
+    // object URL would still download every full-size photo upfront.
+    const observer = new IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting)) { setNearby(true); observer.disconnect(); }
+    }, { rootMargin: "400px" });
+    observer.observe(placeholder.current);
+    return () => observer.disconnect();
+  }, [nearby, loadWhenVisible, photo.path]);
+  useEffect(() => {
+    if (!photo.path || !service.photoBlob || (loadWhenVisible && !nearby)) return;
     let active = true;
     let objectURL = "";
     setUrl(""); setError(false);
@@ -82,10 +95,10 @@ export function StudioImage({ shootId, photo, alt, previewBlob, onPreviewReady, 
       if (active) { setError(true); onPreviewError?.(photo); }
     });
     return () => { active = false; if (objectURL) URL.revokeObjectURL(objectURL); };
-  }, [shootId, photo.path, previewBlob, onPreviewReady, onPreviewError]);
+  }, [shootId, photo.path, previewBlob, onPreviewReady, onPreviewError, loadWhenVisible, nearby]);
   if (!photo.path) return <img loading="lazy" src={photo.url} alt={alt} />;
   if (url) return <img src={url} alt={alt} />;
-  return <span className="photo-developing" role="status">
+  return <span ref={placeholder} className="photo-developing" role="status">
     {error ? <span>Preview unavailable. Open the photo to try again.</span>
       : <LoaderCircle className="spin" aria-label="Loading your photo" />}
   </span>;
