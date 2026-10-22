@@ -132,4 +132,14 @@ Reproduced eager fetching of all 12 full-size private previews on a 390 px phone
 
 Validation: the new regression failed against the old implementation (12 initial requests), then passed in Chromium and WebKit with fewer initial requests and the last preview loading on scroll. The no-observer fallback also passes. TypeScript, 291 unit tests, all 176 browser checks and the production build pass. Mobile screenshots were inspected in both engines. A live returning visit to the empty My photos screen measured 1.27 seconds using browser-tool wall time; this is one warm sample with tool overhead, not a populated-gallery measurement or a field percentile. The previous release's Cloudflare deployment, live asset hashes/cache headers and backend ACTIVE revision were verified. Both backend services remain at minimum zero.
 
-Remaining tradeoffs: first-use browser attestation and an idle backend startup can still add delay; full-size photos depend on the customer's connection. Large recovered libraries still validate galleries sequentially on the server. Neither payment/refund checks nor fresh download access checks should be removed to improve a benchmark. Thumbnail generation, more aggressive caching and paid warm instances were not introduced by this audit.
+Remaining tradeoffs: first-use browser attestation and an idle backend startup can still add delay; full-size photos depend on the customer's connection. Neither payment/refund checks nor fresh download access checks should be removed to improve a benchmark. Thumbnail generation, more aggressive caching and paid warm instances were not introduced by this audit.
+
+### Continued loading and request audit
+
+Reproduced a completed connection retry being sent again whenever a customer moved between My photos and a gallery: the fixture made four lookups instead of two. The UI now consumes each explicit retry once; later retries and focus refreshes still work. Existing background polling limits and hidden-tab skips remain unchanged.
+
+A startup that has not connected within 15 seconds now explains the wait and offers Reload studio; an offline start shows its explanation immediately. This does not trigger automatic retries, erase browser storage, or prevent a late connection from completing normally. The recovery notice remains accessible while displayed. Existing loading/navigation, checkout progress and photo placeholders remain available.
+
+The companion backend overlaps at most two recovered-gallery checks while retaining all existing authority checks, page ordering and the successful-page read count. It stops queued work on failure and does not return a partial page. Hosting continues to scale to zero.
+
+Validation: 291 unit tests and TypeScript, all 182 Chromium/WebKit browser checks, the production build, mobile recovery screenshots, and 35 focused backend tests plus lint/syntax. The stalled startup and repeated-navigation retry regressions both failed against the prior implementation before passing with these changes. No live purchase, generation or customer email is used.

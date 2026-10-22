@@ -69,6 +69,32 @@ for (const width of [390, 1440]) {
   });
 }
 
+test('a stalled startup offers recovery while a late connection can still finish', async ({page}, testInfo) => {
+  await page.clock.install();
+  await page.setViewportSize({width:390,height:844});
+  await fixture(page);
+  await page.goto('/#/library');
+  await expect(page.getByRole('button',{name:'Reload studio',exact:true})).toHaveCount(0);
+  await page.clock.fastForward(15001);
+  await expect(page.getByText('Connecting is taking longer than usual.')).toBeVisible();
+  await expect(page.getByRole('button',{name:'Reload studio',exact:true})).toBeEnabled();
+  await expect(page.getByRole('navigation',{name:'Main navigation'})).toBeVisible();
+  if (process.env.STUDIO_SPEED_SCREENSHOTS) await page.screenshot({path:`${process.env.STUDIO_SPEED_SCREENSHOTS}/slow-start-${testInfo.project.name}.png`});
+  await page.evaluate(() => Reflect.get(window,'connectStudio')());
+  await expect(page.locator('.library-card')).toHaveCount(1);
+  await expect(page.getByRole('button',{name:'Reload studio',exact:true})).toHaveCount(0);
+  await page.evaluate(() => Reflect.get(window,'recoverStudio')());
+});
+
+test('an offline startup explains the connection problem immediately', async ({page}) => {
+  await page.addInitScript(() => Object.defineProperty(navigator,'onLine',{get:()=>false}));
+  await fixture(page);
+  await page.goto('/#/library');
+  await expect(page.getByText('You’re offline. Reconnect to open your photos.')).toBeVisible();
+  await expect(page.getByRole('button',{name:'Reload studio',exact:true})).toBeEnabled();
+  await expect(page.locator('main')).toHaveAttribute('aria-busy','false');
+});
+
 test('mobile checkout shows upload percentage, validation and redirect stages, then safely retries', async ({page}, testInfo) => {
   await page.clock.install();
   await page.setViewportSize({width:390,height:844});

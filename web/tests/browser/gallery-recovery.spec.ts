@@ -108,6 +108,33 @@ test("a rate-limited recovery lookup leaves owned photos open and can be retried
   await expect(page.locator(".gallery-toolbar")).toContainText("12 of 12");
 });
 
+test("a successful connection retry is not repeated on every gallery navigation", async ({ page }) => {
+  await page.clock.install();
+  await recoveredGallery(page, "sent", false, { owner: true, limited: true });
+  const warning = page.getByRole("status").filter({ hasText: "Photo lookup is temporarily limited" });
+  await page.evaluate(() => Reflect.get(window, "setGalleryConnection")("ready"));
+  await warning.getByRole("button", { name: "Retry connection", exact: true }).click();
+  await expect(warning).toHaveCount(0);
+  expect(await page.evaluate(() => Reflect.get(window, "galleryReads"))).toBe(2);
+  await page.getByRole("link", { name: "My photos", exact: true }).first().click();
+  await expect(page.locator(".library-card")).toHaveCount(1);
+  await page.locator(".library-card").click();
+  await expect(page.getByRole("heading", { name: "Paris, with you." })).toBeVisible();
+  await page.clock.runFor(1000);
+  expect(await page.evaluate(() => Reflect.get(window, "galleryReads"))).toBe(2);
+  // A later explicit retry still works; only the already-handled action is skipped.
+  await page.evaluate(() => {
+    Reflect.get(window, "setGalleryConnection")("offline");
+    window.dispatchEvent(new Event("focus"));
+  });
+  const disconnected = page.getByRole("status").filter({ hasText: "Couldn’t refresh your photos" });
+  await expect(disconnected).toBeVisible();
+  await page.evaluate(() => Reflect.get(window, "setGalleryConnection")("ready"));
+  await disconnected.getByRole("button", { name: "Retry connection", exact: true }).click();
+  await expect(disconnected).toHaveCount(0);
+  expect(await page.evaluate(() => Reflect.get(window, "galleryReads"))).toBe(4);
+});
+
 test("a finished reshoot shows success even if the follow-up photo lookup is limited", async ({ page }) => {
   await recoveredGallery(page, "sent", false, { owner: true, reshootLookupFailure: true });
   await page.getByRole("button", { name: "Reshoot s0", exact: true }).click();

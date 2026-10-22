@@ -73,6 +73,7 @@ type Dialog = "help" | "settings" | "account" | "privacy" | "terms" | null;
 export default function App() {
   const [state, setState] = useState<StudioState>(emptyState);
   const [loaded, setLoaded] = useState(false);
+  const [slowConnection, setSlowConnection] = useState(false);
   const [fatal, setFatal] = useState("");
   const [recoverable, setRecoverable] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
@@ -86,6 +87,7 @@ export default function App() {
   const [offline, setOffline] = useState(!navigator.onLine);
   const [galleryError, setGalleryError] = useState("");
   const [galleryRetry, setGalleryRetry] = useState(0);
+  const handledGalleryRetry = useRef(0);
   const [galleryRefreshing, setGalleryRefreshing] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const main = useRef<HTMLElement>(null);
@@ -112,6 +114,11 @@ export default function App() {
   useEffect(() => {
     if (redirectHome) window.location.replace(homeHref);
   }, [redirectHome]);
+  useEffect(() => {
+    if (loaded || fatal || redirectHome) return;
+    const timer = setTimeout(() => setSlowConnection(true), 15000);
+    return () => clearTimeout(timer);
+  }, [loaded, fatal, redirectHome]);
   useEffect(() => {
     if (!loaded || !liveMode) return;
     const event = studioRouteEvent(path, state);
@@ -194,7 +201,10 @@ export default function App() {
       } catch (error) { if (alive) setGalleryError(galleryRefreshMessage(error)); }
       finally { running = false; if (alive) setGalleryRefreshing(false); }
     };
-    if (galleryRetry) void refresh();
+    if (galleryRetry !== handledGalleryRetry.current) {
+      handledGalleryRetry.current = galleryRetry;
+      void refresh();
+    }
     const timer = setInterval(() => void refresh(true), 15000);
     const focus = () => void refresh();
     window.addEventListener("focus", focus);
@@ -276,8 +286,16 @@ export default function App() {
     return (
       <>
         <StudioHeader path={path} count={0} />
-        <main className="shell main" aria-busy="true">
+        <main className="shell main" aria-busy={!(offline || slowConnection)}>
           <h1>{path === "/library" ? "My photos" : path === "/checkout" ? "Review your photoshoot" : "Your photoshoot"}</h1>
+          {(offline || slowConnection) && <div className="notice" role="status">
+            <Info size={18} />
+            <div>
+              <p>{offline ? "You’re offline. Reconnect to open your photos." : "Connecting is taking longer than usual."}</p>
+              <p>You can wait or reload to try again. Reloading won’t clear your saved progress.</p>
+              <button className="button secondary" onClick={() => window.location.reload()}>Reload studio</button>
+            </div>
+          </div>}
           <GalleryLoading />
         </main>
       </>
