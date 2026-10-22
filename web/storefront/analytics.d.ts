@@ -1,7 +1,7 @@
 import type { Acquisition } from './acquisition.js';
 export const MEASUREMENT_ID: string;
 export const ANALYTICS_VERSION: string;
-export type AnalyticsContext = { enabled: boolean; version: string; clientId?: string; sessionId?: string; gaSessionId?: number; firstSeenAtMs?: number; firstAttribution?: Acquisition; sessionAttribution?: Acquisition; attribution?: Acquisition };
+export type AnalyticsContext = { enabled: boolean; isTest?: boolean; version: string; clientId?: string; sessionId?: string; gaSessionId?: number; firstSeenAtMs?: number; firstAttribution?: Acquisition; sessionAttribution?: Acquisition; attribution?: Acquisition };
 export function safeParams(input?: Record<string,unknown>): Record<string,string|number>;
 export function safePage(href:string):string;
 export function nextIdentity(previous:unknown,input:{now:number;uuid:()=>string;attribution:Acquisition}):any;

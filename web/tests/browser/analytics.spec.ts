@@ -495,8 +495,19 @@ test("marked test traffic keeps the same ID and original context in authenticate
     a.queueStudioEvent('pack_opened',{packId:'paris'},eventId);
     return {row:await sent,eventId};
   },analyticsModule);
-  expect(row.row.id).toBe(row.eventId);expect(row.row.params.isTest).toBe(true);
+  expect(row.row.id).toBe(row.eventId);expect(row.row.params.isTest).toBe(true);expect(row.row.context.isTest).toBe(true);
   expect(row.row.params.sessionId).toBe(row.row.context.sessionId);
   const ga=(await records(page)).find(entry=>entry[1]==='pack_opened')![2] as any;
   expect(row.row.at).toBe(ga.occurred_at_ms);expect(row.row.context.gaSessionId).toBe(ga.session_id);
+});
+
+
+test("a transferred old source preserves sales credit but does not invent a fresh campaign arrival",async({page})=>{
+  await setup(page);const raw:any[]=[];
+  await page.route('**/collectWebJourney',async route=>{raw.push(route.request().postDataJSON());await route.fulfill({json:{disposition:'accepted'},headers:{'Access-Control-Allow-Origin':'*'}});});
+  await page.goto('/?utm_source=instagram&utm_medium=social&utm_campaign=old_campaign&ba_at='+String(Date.now()-86400000));
+  await expect.poll(()=>raw.some(row=>row.name==='page_view')).toBe(true);
+  const row=raw.find(row=>row.name==='page_view');
+  expect(row.context.attribution.source).toBe('instagram');
+  expect(row.context.sessionAttribution.source).toBe('direct');
 });

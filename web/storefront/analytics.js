@@ -7,7 +7,7 @@ import {
   directAttribution,
 } from "./acquisition.js";
 export const MEASUREMENT_ID = "G-2VT9EWH1B5";
-export const ANALYTICS_VERSION = "web-20261021-6";
+export const ANALYTICS_VERSION = "web-20261021-7";
 const KEY = "beanywhere-measurement-v1";
 const CHOICE = "beanywhere-analytics-choice";
 const TIMEOUT = 30 * 60000;
@@ -158,7 +158,8 @@ const eventContexts = new Map();
 function eventSnapshot() {
   return { at: Date.now(), pagePath: safePage(window.location.href), referrer: safeReferrer(),
     attribution: currentAttribution(), isTest: testTraffic(), activePage: document.visibilityState === "visible" && document.hasFocus(),
-    arrival: captureAttribution({ url: window.location.href, referrer: document.referrer }),
+    arrival: new URL(window.location.href).searchParams.has("ba_at") ? directAttribution()
+      : captureAttribution({ url: window.location.href, referrer: document.referrer }),
     ...(analyticsAllowed() ? { context: analyticsContext({ active: false }) } : memory ? {context:{...memory}} : {}) };
 }
 function rememberEarly(name, params, eventId) {
@@ -282,6 +283,7 @@ export function analyticsContext({ active = true } = {}) {
   const state = identity({ active });
   return {
     enabled: true,
+    isTest: testTraffic(),
     version: ANALYTICS_VERSION,
     clientId: state.clientId,
     sessionId: state.sessionId,
@@ -474,7 +476,7 @@ const JOURNAL = "beanywhere-journey-outbox-v1";
 const journal = durableQueue(JOURNAL);
 function journalEvent(name, params, id, state, attribution, pagePath, referrer, at, isTest, activePage) {
   if (!UUID.test(id) || name === "web_vital") return;
-  const context = { enabled: true, version: ANALYTICS_VERSION, clientId: state.clientId,
+  const context = { enabled: true, isTest: !!isTest, version: ANALYTICS_VERSION, clientId: state.clientId,
       sessionId: state.sessionId, gaSessionId: state.gaSessionId, firstSeenAtMs: state.firstSeenAtMs,
       firstAttribution: state.firstAttribution, sessionAttribution: state.sessionAttribution, attribution };
   eventContexts.set(id, { context, at });

@@ -61,3 +61,9 @@ October 21 raw measurement reliability, release `web-20261021-6`: original actio
 
 Validation: 266 unit tests, all 140 Chromium/WebKit browser tests, TypeScript and production build passed. Backend validation: 269 release checks and real BigQuery fixture execution, including five independent report comparisons. Test browser traffic uses `ba_test=1` and is retained as test data for verification.
 Final verification includes 142 browser checks. Marked browser test visits now retain `isTest` in authenticated business events as well as the Google/first-party copies; original shared IDs, timestamps and context are asserted together.
+
+### Final analytics exclusion audit (October 21, web-20261021-7)
+
+The test marker is now part of the shared analytics context so Studio observations and later server sale/outcome events keep their test provenance. Delayed initialization treats carried `ba_at` links as internal/direct session arrivals while preserving their prior campaign for sales attribution. The backend checks the registered owner-browser IDs before adding Studio behavior counters; it keeps the raw records. The known Codex browser is now registered alongside the three owner browsers, protecting reports even if a later test link omits `ba_test=1`.
+
+Checks: 266 frontend tests and 144 Chromium/WebKit browser checks passed. The added regression checks cover context test propagation and carried source labels. Google exports can still be delayed, storage clearing creates a new browser identity, and separate app browsers need their own registration. No fingerprint or shared-IP exclusion is used.
