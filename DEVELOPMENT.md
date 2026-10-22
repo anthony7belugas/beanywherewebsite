@@ -143,3 +143,11 @@ A startup that has not connected within 15 seconds now explains the wait and off
 The companion backend overlaps at most two recovered-gallery checks while retaining all existing authority checks, page ordering and the successful-page read count. It stops queued work on failure and does not return a partial page. Hosting continues to scale to zero.
 
 Validation: 291 unit tests and TypeScript, all 182 Chromium/WebKit browser checks, the production build, mobile recovery screenshots, and 35 focused backend tests plus lint/syntax. The stalled startup and repeated-navigation retry regressions both failed against the prior implementation before passing with these changes. No live purchase, generation or customer email is used.
+
+### Overlapping requests and stale screen audit
+
+Reproduced two simultaneous requests for the same photo downloading it twice. The live service now shares only an in-flight transfer for the same admitted browser, owner, gallery, exact photo path and recovery-email epoch. Entries are removed on success or failure; later requests fetch again through the existing access checks. Replacement versions and changed recovery emails cannot join an earlier request. No completed-photo cache or persistent private-photo storage is added, and saving retains its final access check.
+
+Reproduced a delayed screen read replacing a newer email with an older value, and a delayed error replacing a successfully loaded screen with a fatal connection message. Notification reads and gallery-refresh reads now share a monotonic request version; only the latest read may update the screen. A gallery refresh whose route has been left does not start another screen read. New errors are still surfaced and subsequent success still recovers the interface.
+
+Validation: TypeScript and all 295 unit tests, all 190 Chromium/WebKit browser checks, and the production build. Regression tests first failed against the earlier implementation, then verified one shared transfer, fresh access on later requests, retry after failure, separate photo versions/email contexts, and out-of-order successes/failures across both refresh sources. Backend code and hosting configuration are unchanged; no additional fixed cost, warm-up traffic, live payment, photo generation or customer email is introduced.

@@ -7,6 +7,55 @@ async function selected(page: import("@playwright/test").Page) {
   await expect(page.getByText("4 / 6 photos selected")).toBeVisible();
 }
 
+for (const source of ['notification', 'gallery refresh']) for (const outcome of ['stale success', 'stale failure']) test(`an older screen refresh cannot replace a newer result: ${source}, ${outcome}`, async ({ page }) => {
+  await page.route('**/src/services/index.ts', route => route.fulfill({ contentType: 'application/javascript', body: `
+    export const liveMode = true;
+    const state = {version:1,draft:null,email:'',preferredStyling:'w',shoots:[]};
+    const listeners = new Set();
+    let delayed = false;
+    window.pendingScreenReads = [];
+    window.delayScreenReads = () => { delayed = true; };
+    window.refreshScreen = () => { for (const listener of listeners) listener(); };
+    window.refreshGallery = () => window.dispatchEvent(new Event('focus'));
+    export const service = {
+      mode:'live', track:()=>{},
+      read: () => delayed ? new Promise((resolve,reject) => window.pendingScreenReads.push({resolve,reject})) : Promise.resolve(state),
+      subscribe: listener => { listeners.add(listener); return () => listeners.delete(listener); },
+      refreshGalleries: async () => true,
+    };
+    window.finishScreenRead = (index, result) => {
+      const pending = window.pendingScreenReads[index];
+      if (result === 'error') pending.reject(new Error('Old connection failure'));
+      else pending.resolve({...state,recoveryEmail:result});
+    };
+  ` }));
+  await page.goto('/#/library');
+  await expect(page.getByRole('button',{name:'Find my photos',exact:true})).toBeVisible();
+  await page.evaluate(source => {
+    Reflect.get(window,'delayScreenReads')();
+    Reflect.get(window,'refreshScreen')();
+    Reflect.get(window,source === 'notification' ? 'refreshScreen' : 'refreshGallery')();
+  },source);
+  await expect.poll(() => page.evaluate(() => Reflect.get(window,'pendingScreenReads').length)).toBe(2);
+  await page.evaluate(() => Reflect.get(window,'finishScreenRead')(1,'current@example.com'));
+  // The settings dialog reads the latest state rather than preserving form edits.
+  await page.getByRole('button',{name:'Photo settings',exact:true}).click();
+  await expect(page.getByRole('dialog')).toContainText('current@example.com');
+  await page.evaluate(result => Reflect.get(window,'finishScreenRead')(0,result), outcome === 'stale failure' ? 'error' : 'old@example.com');
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await expect(page.getByRole('dialog')).toContainText('current@example.com');
+  await expect(page.getByRole('heading',{name:'Your photos need to reconnect.'})).toHaveCount(0);
+  // A genuinely newer error still appears, and a later successful read recovers.
+  await page.evaluate(() => Reflect.get(window,'refreshScreen')());
+  await expect.poll(() => page.evaluate(() => Reflect.get(window,'pendingScreenReads').length)).toBe(3);
+  await page.evaluate(() => Reflect.get(window,'finishScreenRead')(2,'error'));
+  await expect(page.getByRole('heading',{name:'Your photos need to reconnect.'})).toBeVisible();
+  await page.evaluate(() => Reflect.get(window,'refreshScreen')());
+  await expect.poll(() => page.evaluate(() => Reflect.get(window,'pendingScreenReads').length)).toBe(4);
+  await page.evaluate(() => Reflect.get(window,'finishScreenRead')(3,'reconnected@example.com'));
+  await expect(page.getByRole('dialog')).toContainText('reconnected@example.com');
+});
+
 test("failed permission and glasses saves roll back their visible state", async ({
   page,
 }) => {

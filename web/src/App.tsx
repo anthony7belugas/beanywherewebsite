@@ -88,6 +88,7 @@ export default function App() {
   const [galleryError, setGalleryError] = useState("");
   const [galleryRetry, setGalleryRetry] = useState(0);
   const handledGalleryRetry = useRef(0);
+  const readVersion = useRef(0);
   const [galleryRefreshing, setGalleryRefreshing] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const main = useRef<HTMLElement>(null);
@@ -138,9 +139,10 @@ export default function App() {
       window.history.replaceState(null, "", `${window.location.pathname}${withoutStorefrontEntry(window.location.search)}${window.location.hash}`);
     })();
     const refresh = () => {
+      const version = ++readVersion.current;
       void initialize.then(() => service.read())
         .then((s) => {
-          if (alive) {
+          if (alive && version === readVersion.current) {
             setState(s);
             setGalleryError(s.galleryRefreshError || "");
             setLoaded(true);
@@ -149,7 +151,7 @@ export default function App() {
           }
         })
         .catch((error: unknown) => {
-          if (alive) {
+          if (alive && version === readVersion.current) {
             const savedDataError = error instanceof InvalidStoredStateError;
             trackWeb("web_error", { surface: "studio_startup", error_code: savedDataError ? "stored_state_invalid" : analyticsErrorCode(error) });
             setRecoverable(savedDataError);
@@ -194,11 +196,15 @@ export default function App() {
       if (running || document.hidden) return;
       running = true;
       setGalleryRefreshing(true);
+      let version: number | undefined;
       try {
-        if (await service.refreshGalleries?.({ background }) === false) return;
+        if (await service.refreshGalleries?.({ background }) === false || !alive) return;
+        version = ++readVersion.current;
         const next = await service.read();
-        if (alive) { setState(next); setGalleryError(next.galleryRefreshError || ""); }
-      } catch (error) { if (alive) setGalleryError(galleryRefreshMessage(error)); }
+        if (alive && version === readVersion.current) { setState(next); setGalleryError(next.galleryRefreshError || ""); }
+      } catch (error) {
+        if (alive && (version === undefined || version === readVersion.current)) setGalleryError(galleryRefreshMessage(error));
+      }
       finally { running = false; if (alive) setGalleryRefreshing(false); }
     };
     if (galleryRetry !== handledGalleryRetry.current) {

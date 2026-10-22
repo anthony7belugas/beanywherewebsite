@@ -302,6 +302,68 @@ it("passes private photo downloads and final access checks through the authorize
   expect(api.assertPhotos).toHaveBeenCalledWith("job_1", [photoPath]);
 });
 
+it("shares only an in-flight photo transfer, then checks access again for later requests", async () => {
+  const photo = (await service.read()).shoots[0].photos[0];
+  let finish!: (blob: Blob) => void;
+  api.download.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const tile = service.photoBlob("job_1", photo);
+  const viewer = service.photoBlob("job_1", { ...photo });
+  await vi.waitFor(() => expect(api.download).toHaveBeenCalled());
+  expect(api.download).toHaveBeenCalledTimes(1);
+  const bytes = new Blob(["verified photo"]);
+  finish(bytes);
+  expect(await tile).toBe(bytes); expect(await viewer).toBe(bytes);
+  api.download.mockRejectedValueOnce(new Error("Photo access changed"));
+  await expect(service.photoBlob("job_1", photo)).rejects.toThrow("Photo access changed");
+  expect(api.download).toHaveBeenCalledTimes(2);
+});
+
+it("failed shared photo transfers can be retried without reusing the rejection", async () => {
+  const photo = (await service.read()).shoots[0].photos[0];
+  let reject!: (error: Error) => void;
+  api.download.mockImplementationOnce(() => new Promise((_, fail) => { reject = fail; }));
+  const first = service.photoBlob("job_1", photo), second = service.photoBlob("job_1", photo);
+  const results = Promise.allSettled([first, second]);
+  await vi.waitFor(() => expect(api.download).toHaveBeenCalled());
+  expect(api.download).toHaveBeenCalledTimes(1);
+  reject(new Error("Connection lost"));
+  expect((await results).map(result => result.status)).toEqual(["rejected", "rejected"]);
+  await expect(service.photoBlob("job_1", photo)).resolves.toBeInstanceOf(Blob);
+  expect(api.download).toHaveBeenCalledTimes(2);
+});
+
+it("different photo versions never share an in-flight transfer", async () => {
+  const state = await service.read(), photo = state.shoots[0].photos[0];
+  const replacement = { ...photo, path: photoPath.replace('photo.jpg', 'replacement.jpg') };
+  const finish: ((blob: Blob) => void)[] = [];
+  api.download.mockImplementation(() => new Promise(resolve => { finish.push(resolve); }));
+  const old = service.photoBlob("job_1", photo), newer = service.photoBlob("job_1", replacement);
+  await vi.waitFor(() => expect(api.download).toHaveBeenCalledTimes(2));
+  const oldBytes = new Blob(['old']), newBytes = new Blob(['new']);
+  finish[1](newBytes); finish[0](oldBytes);
+  expect(await old).toBe(oldBytes); expect(await newer).toBe(newBytes);
+});
+
+it("a changed recovery email cannot join a previous email's pending photo request", async () => {
+  const owner = `w_${'b'.repeat(40)}`, path = `outputs/${owner}/job_1/photo.jpg`;
+  const recovered = { ...job(), uid: owner, readableOutputPaths: [path],
+    slots: job().slots.map(slot => slot.slotId === 's0' ? { ...slot, path } : slot) };
+  api.listJobs.mockResolvedValue([]);
+  api.listWebGalleries = vi.fn().mockResolvedValue({ email: 'first@example.com', jobs: [recovered], nextCursor: null });
+  const photo = (await service.read()).shoots[0].photos[0];
+  const finish: ((blob: Blob) => void)[] = [];
+  api.galleryPhoto = vi.fn().mockImplementation(() => new Promise(resolve => { finish.push(resolve); }));
+  const first = service.photoBlob('job_1', photo), duplicate = service.photoBlob('job_1', photo);
+  await vi.waitFor(() => expect(api.galleryPhoto).toHaveBeenCalledTimes(1));
+  api.recoverGalleries = vi.fn().mockResolvedValue({ email:'second@example.com', jobs:[recovered], nextCursor:null });
+  await service.recoverGalleries('second@example.com');
+  const second = service.photoBlob('job_1', photo);
+  await vi.waitFor(() => expect(api.galleryPhoto).toHaveBeenCalledTimes(2));
+  finish.forEach(resolve => resolve(new Blob(['verified'])));
+  await Promise.all([first, duplicate, second]);
+  expect(api.download).not.toHaveBeenCalled();
+});
+
 it("does not map per-shoot deletion to the all-photos deletion endpoint", async () => {
   await expect(service.deleteShoot()).rejects.toThrow("all your photos");
   expect(api.deleteAllPhotos).not.toHaveBeenCalled();

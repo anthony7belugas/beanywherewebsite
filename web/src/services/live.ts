@@ -94,6 +94,7 @@ export class LiveStudioService implements StudioService {
   private checkoutInFlight?: Promise<ReturnType<typeof result>>;
   private checkoutAbort?: AbortController;
   private retries = new Map<string, Promise<void>>();
+  private photoTransfers = new Map<string, Promise<Blob>>();
   private local: LocalStudioService;
   constructor(private connect: () => Promise<API>, private namespace = "beanywhere-web-live-v1") {
     this.local = new LocalStudioService(`${namespace}-drafts`);
@@ -589,11 +590,20 @@ export class LiveStudioService implements StudioService {
   }
   async photoBlob(shootId: string, photo: Photo) {
     if (!photo.path) throw new Error("This photo is still being prepared.");
+    const path = photo.path;
     await this.startWatching();
     const api = await this.api();
     const job = this.allJobs().find(job => job.id === shootId);
     if (!job) throw new Error("This gallery is unavailable.");
-    return job.uid === api.session.uid ? api.download(shootId, photo.path) : api.galleryPhoto(shootId, photo.path);
+    const key = JSON.stringify([api.session.uid, job.uid, shootId, path, this.recoveryEpoch]);
+    const pending = this.photoTransfers.get(key);
+    if (pending) return pending;
+    // A tile, viewer and save action can ask for the same bytes simultaneously.
+    // Share only that active request; later requests recheck access and refetch.
+    const transfer = (job.uid === api.session.uid ? api.download(shootId, path) : api.galleryPhoto(shootId, path))
+      .finally(() => { this.photoTransfers.delete(key); });
+    this.photoTransfers.set(key, transfer);
+    return transfer;
   }
   async assertPhotos(shootId: string, photos: Photo[]) {
     await this.startWatching();
