@@ -689,8 +689,8 @@ it("an email-gallery visit settles the paid draft and allows a fresh purchase of
   const reopened = new LiveStudioService(async () => api as API, namespace);
   const state = await reopened.read();
   expect(state.shoots).toHaveLength(1);
-  expect(state.draft).toBeNull();
-  expect(state.savedSelfies?.references).toEqual(draft.references);
+  await vi.waitFor(async () => expect((await reopened.read()).draft).toBeNull());
+  expect((await reopened.read()).savedSelfies?.references).toEqual(draft.references);
   await reopened.startDraft("paris", "w", "casual");
   let next = (await reopened.read()).draft!;
   expect(next.checkoutKey).not.toBe(draft.checkoutKey);
@@ -849,4 +849,50 @@ it("a payment that wins an email edit opens the paid order without a new checkou
   expect(api.createOrder).toHaveBeenCalledTimes(1);
   expect(api.beginWebCheckout).toHaveBeenCalledTimes(1);
   expect((await local.read()).email).toBe('paid@example.com');
+});
+
+it("shows owned galleries and starts their listener while recovery is still pending", async () => {
+  let recover!: (value: unknown) => void;
+  api.listWebGalleries = vi.fn(() => new Promise(resolve => { recover = resolve; }));
+  const changed = vi.fn(); service.subscribe(changed);
+  const state = await service.read();
+  expect(state.shoots.map(shoot => shoot.id)).toEqual(['job_1']);
+  expect(state.galleryLoading).toBe(true);
+  expect(api.watchJobs).toHaveBeenCalledOnce();
+  const other = { ...job(), id: 'recovered', uid: `w_${'b'.repeat(40)}` };
+  recover({ email: 'buyer@example.com', jobs: [other], nextCursor: null });
+  await vi.waitFor(async () => {
+    const next = await service.read();
+    expect(next.galleryLoading).toBe(false);
+    expect(next.shoots).toHaveLength(2);
+  });
+  expect(changed).toHaveBeenCalled();
+});
+
+it("does not block a readable gallery on a slow receipt, then settles its draft when verified", async () => {
+  await service.checkout(draft, 'buyer@example.com');
+  api.listJobs.mockResolvedValue([{ ...job(), orderId: 'order_1' }]);
+  let receipt!: (value: unknown) => void;
+  api.reconcileWebCheckout.mockImplementation(() => new Promise(resolve => { receipt = resolve; }));
+  const reopened = new LiveStudioService(async () => api as API, namespace);
+  expect((await reopened.read()).shoots).toHaveLength(1);
+  await vi.waitFor(() => expect(api.reconcileWebCheckout).toHaveBeenCalledOnce());
+  receipt(checkout('fulfilled'));
+  await vi.waitFor(async () => expect((await reopened.read()).draft).toBeNull());
+});
+
+it("reports real upload progress and skips upload on a saved-order retry", async () => {
+  api.uploadReferences.mockImplementation(async (_files: unknown, _id: unknown, _glasses: unknown, progress: (n: number) => void) => {
+    progress(0.25); progress(0.75); progress(1);
+    return { sessionId: 'upload_1', uploadStatus: 'completed' };
+  });
+  const progress = vi.fn();
+  api.beginWebCheckout.mockRejectedValueOnce(new Error('Connection interrupted'));
+  await expect(service.checkout(draft, 'buyer@example.com', progress)).rejects.toThrow('interrupted');
+  expect(progress.mock.calls.map(([value]) => value)).toContainEqual({ stage: 'uploading', fraction: 0.75 });
+  expect(progress).toHaveBeenLastCalledWith({ stage: 'opening' });
+  progress.mockClear();
+  await service.checkout(draft, 'buyer@example.com', progress);
+  expect(progress.mock.calls.map(([value]) => value.stage)).toEqual(['preparing', 'opening']);
+  expect(api.uploadReferences).toHaveBeenCalledOnce();
 });

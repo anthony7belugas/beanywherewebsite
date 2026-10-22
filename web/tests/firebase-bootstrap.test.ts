@@ -32,7 +32,7 @@ beforeEach(() => {
   m.app.mockImplementation((options, name) => { const app = { name, options }; m.apps.push(app); return app; });
   m.appCheck.mockReturnValue({}); m.token.mockResolvedValue({ token: "app-check-token" });
   m.identity.mockResolvedValue("a".repeat(64));
-  m.callable.mockImplementation((_fn, name) => (data: unknown) => m.call(name, data));
+  m.callable.mockImplementation((_fn, name) => (data: any) => name === "webStudio" ? m.call(data.operation, data.input) : m.call(name, data));
   m.call.mockResolvedValue({ data: session });
   m.signin.mockResolvedValue({ user: { uid } });
   m.claims.mockResolvedValue({ claims: { platform: "web", webAppId: appId,

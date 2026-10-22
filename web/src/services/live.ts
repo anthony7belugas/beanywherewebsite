@@ -6,7 +6,7 @@ import { LocalStudioService } from "./local";
 import { packById } from "../lib/catalog";
 import { validateDraft } from "../lib/domain";
 import { galleryRefreshMessage, photoRetryState } from "../lib/gallery-state";
-import type { CheckoutReview, Draft, DraftGuard, DraftUpdate, Photo, Shoot, StudioService, Styling } from "../lib/types";
+import type { CheckoutProgress, CheckoutReview, Draft, DraftGuard, DraftUpdate, Photo, Shoot, StudioService, Styling } from "../lib/types";
 import type { createFirebaseAdapter, NativeJobProjection, ReshootOperation, WebCheckout, GalleryPage } from "../../integration/firebase-adapter";
 
 type API = ReturnType<typeof createFirebaseAdapter>;
@@ -79,6 +79,7 @@ export class LiveStudioService implements StudioService {
   private galleryRefresh?: Promise<boolean>;
   private galleryRefreshError = "";
   private galleryKnown = false;
+  private galleryLoading = true;
   private nextGalleryRefreshAt = 0;
   private gallerySnapshot = "";
   private galleryChangedAt = 0;
@@ -145,11 +146,14 @@ export class LiveStudioService implements StudioService {
     return this.watching ??= (async () => {
       const api = await this.api();
       this.favorites = (await (await this.database()).get("favorites", api.session.uid)) || {};
+      // Recovery is independent of owned shoots. A slow recovery endpoint must
+      // not hold the initial owned gallery or its realtime listener hostage.
+      void this.refreshGalleries().catch(() => {}).finally(() => {
+        this.galleryLoading = false;
+        this.changed();
+      });
       // Initial server read lets permission/index failures reach the UI rather than an empty gallery.
       this.jobs = await api.listJobs();
-      // Email recovery is independent of this browser's owned galleries and checkout.
-      // Keep its failure visible without blocking the owner listener or the whole studio.
-      await this.refreshGalleries().catch(() => {});
       await api.watchJobs(jobs => { this.jobs = jobs; this.watchError = null; this.changed(); },
         error => { this.jobs = []; this.watchError = error; this.changed(); });
     })().catch(error => { this.watching = undefined; throw error; });
@@ -158,12 +162,15 @@ export class LiveStudioService implements StudioService {
     await this.local.read();
     await this.startWatching();
     if (this.watchError) throw this.watchError;
-    await this.settleGalleryPurchases();
+    // Receipt reconciliation can update a saved draft later; it is not needed
+    // to display photos whose access has already been verified.
+    void this.settleGalleryPurchases().catch(() => {});
     const state = await this.local.read();
     const api = await this.api();
     this.favorites = (await (await this.database()).get("favorites", api.session.uid)) || {};
     const attempts = await (await this.database()).getAll("attempts") as Attempt[];
     return { ...state, recoveryEmail: this.recoveryEmail, galleryRefreshError: this.galleryRefreshError,
+      galleryLoading: this.galleryLoading,
       shoots: this.allJobs().filter(job => !!packById(job.packId))
       .map(job => {
         const shoot = projectWebJob(job, this.favorites);
@@ -300,13 +307,16 @@ export class LiveStudioService implements StudioService {
     await tx.done;
     return next;
   }
-  checkout(review: CheckoutReview, email: string) {
+  checkout(review: CheckoutReview, email: string, onProgress?: (progress: CheckoutProgress) => void) {
     if (this.checkoutInFlight) return this.checkoutInFlight;
     const controller = new AbortController(); this.checkoutAbort = controller;
-    return this.checkoutInFlight = this.runCheckout(review, email.trim(), controller.signal)
+    return this.checkoutInFlight = this.runCheckout(review, email.trim(), controller.signal, onProgress)
       .finally(() => { this.checkoutInFlight = undefined; this.checkoutAbort = undefined; });
   }
-  private async runCheckout(review: CheckoutReview, email: string, signal: AbortSignal, recoveredRefund = false): Promise<ReturnType<typeof result>> {
+  private async runCheckout(review: CheckoutReview, email: string, signal: AbortSignal,
+    onProgress?: (progress: CheckoutProgress) => void, recoveredRefund = false): Promise<ReturnType<typeof result>> {
+    const progress = (value: CheckoutProgress) => { if (!signal.aborted) onProgress?.(value); };
+    progress({ stage: "preparing" });
     const draft = { ...await this.current(review, signal), email };
     const invalid = validateDraft(draft);
     if (invalid) throw new Error(invalid);
@@ -369,12 +379,15 @@ export class LiveStudioService implements StudioService {
         });
         this.track("upload_started", { packId: draft.packId, styling: draft.styling });
         const uploadStarted=performance.now();
+        progress({ stage: "uploading", fraction: 0 });
         const uploaded = await api.uploadReferences(blobs, attempt.uploadAttempt, attempt.draft.wearsGlasses,
-          () => {}, signal).catch(error=>{this.track("upload_failed",{packId:draft.packId,styling:draft.styling,reason:signal?.aborted?"cancelled":analyticsErrorCode(error)});throw error;});
+          fraction => progress(fraction < 1 ? { stage: "uploading", fraction } : { stage: "checking" }),
+          signal).catch(error=>{this.track("upload_failed",{packId:draft.packId,styling:draft.styling,reason:signal?.aborted?"cancelled":analyticsErrorCode(error)});throw error;});
         attempt = await this.checkpoint(attempt, { uploadSessionId: uploaded.sessionId });
         this.track("upload_completed", { packId: draft.packId, styling: draft.styling, count:blobs.length,durationMs:Math.round(performance.now()-uploadStarted) });
       }
       await this.current(review, signal);
+      progress({ stage: "checking" });
       const order = await api.createOrder({ packId: attempt.draft.packId,
         productId: ready.productId || packById(attempt.draft.packId)!.productId,
         styling: attempt.draft.styling, styleId: attempt.draft.styleId,
@@ -383,6 +396,7 @@ export class LiveStudioService implements StudioService {
       attempt = await this.checkpoint(attempt, { orderId: order.orderId });
     }
     await this.current(review, signal);
+    progress({ stage: "opening" });
     const checkout = await api.beginWebCheckout(attempt.orderId!, attempt.email, attempt.attribution);
     await this.current(review, signal);
     if (checkout.amountMinor !== 399 || checkout.currency !== "usd") {
@@ -392,7 +406,7 @@ export class LiveStudioService implements StudioService {
       // A verified refund closes only this order. Keep the reviewed selfies, but
       // use a fresh upload/order identity for an intentional new purchase.
       await this.releaseAttempt(attempt);
-      if (!recoveredRefund) return this.runCheckout(review, email, signal, true);
+      if (!recoveredRefund) return this.runCheckout(review, email, signal, onProgress, true);
       throw new Error("This purchase is closed. Review your shoot before trying again.");
     }
     if (checkout.state === "fulfilled") await this.finishDraft(attempt);

@@ -5,7 +5,8 @@ import type { Acquisition } from "../storefront/acquisition.js";
  * cannot be used by this adapter, even when signed into the same Firebase project.
  */
 import { type Auth, getIdTokenResult, onIdTokenChanged } from "firebase/auth";
-import { type Functions, httpsCallable } from "firebase/functions";
+import { type Functions } from "firebase/functions";
+import { studioCallable } from "./studio-callable";
 import {
   type Firestore,
   collection,
@@ -222,9 +223,7 @@ export function createFirebaseAdapter(deps: AdapterDependencies) {
   ) {
     await ready(signal);
     assertSession(signal);
-    const result = await httpsCallable<unknown, T>(functions, name, {
-      timeout,
-    })(data);
+    const result = await studioCallable<unknown, T>(functions, name, timeout)(data);
     assertSession(signal);
     return result.data;
   }
@@ -362,42 +361,53 @@ export function createFirebaseAdapter(deps: AdapterDependencies) {
       if (upload.uploadStatus === "finalizing") {
         throw new Error("Your photos are still being checked. Try again shortly.");
       }
-      // A lost finalize/commit response must not rewrite a now-immutable completed upload.
-      for (let i = 0; upload.uploadStatus === "open" && i < files.length; i++) {
-        await ready(signal);
-        assertSession(signal);
-        const task = uploadBytesResumable(
-          ref(storage, upload.fullPaths[i]),
-          files[i],
-          { contentType: "image/jpeg", cacheControl: "private,max-age=86400" },
-        );
-        const abort = () => task.cancel();
-        teardown.add(abort);
-        signal?.addEventListener("abort", abort, { once: true });
-        try {
-          await new Promise<void>((resolve, reject) =>
-            task.on(
-              "state_changed",
-              (s) => {
-                if (
-                  !signal?.aborted &&
-                  !invalidated &&
-                  auth.currentUser === admittedUser
-                )
-                  onProgress(
-                    (i + s.bytesTransferred / s.totalBytes) / files.length,
-                  );
-              },
-              reject,
-              resolve,
-            ),
-          );
-        } finally {
-          signal?.removeEventListener("abort", abort);
-          teardown.delete(abort);
+      // Two transfers overlap network waits without flooding mobile connections.
+      // On any failure, cancel and await the other transfer before allowing retry.
+      const fractions = files.map(() => 0);
+      const active = new Set<() => void>();
+      let cursor = 0, failed = false;
+      let failure: unknown;
+      const uploadNext = async () => {
+        while (upload.uploadStatus === "open" && cursor < files.length && !failed) {
+          const i = cursor++;
+          try {
+            await ready(signal);
+            assertSession(signal);
+            if (failed) return;
+            const task = uploadBytesResumable(ref(storage, upload.fullPaths[i]), files[i],
+              { contentType: "image/jpeg", cacheControl: "private,max-age=86400" });
+            let cancelled = false;
+            const abort = () => { if (!cancelled) { cancelled = true; task.cancel(); } };
+            active.add(abort); teardown.add(abort);
+            signal?.addEventListener("abort", abort, { once: true });
+            try {
+              await new Promise<void>((resolve, reject) => task.on("state_changed", s => {
+                if (!signal?.aborted && !invalidated && !failed && auth.currentUser === admittedUser) {
+                  fractions[i] = s.bytesTransferred / s.totalBytes;
+                  onProgress(fractions.reduce((sum, value) => sum + value, 0) / files.length);
+                }
+              }, reject, resolve));
+            } finally {
+              signal?.removeEventListener("abort", abort);
+              active.delete(abort); teardown.delete(abort);
+            }
+            assertSession(signal);
+            if (!failed) {
+              fractions[i] = 1;
+              onProgress(fractions.reduce((sum, value) => sum + value, 0) / files.length);
+            }
+          } catch (error) {
+            if (!failed) {
+              failed = true; failure = error;
+              for (const abort of active) abort();
+            }
+          }
         }
-        assertSession(signal);
-      }
+      };
+      await Promise.all([uploadNext(), uploadNext()]);
+      if (failed) throw failure;
+      // Completed sessions are immutable; retries skip rewriting their files.
+      onProgress(1);
       const result = await call<{ completed: boolean; fullPaths: string[] }>(
         "finalizeReferenceUploadSession",
         { sessionId: upload.sessionId },

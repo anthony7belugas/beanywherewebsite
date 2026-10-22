@@ -113,7 +113,7 @@ beforeEach(() => {
   });
   m.appCheck.mockResolvedValue({ token: "test" });
   m.callable.mockImplementation(
-    (_f, name) => (data: unknown) => m.call(name, data),
+    (_f, name) => (data: any) => name === "webStudio" ? m.call(data.operation, data.input) : m.call(name, data),
   );
   m.call.mockImplementation(async (name: string) => ({
     data:
@@ -218,7 +218,7 @@ describe("staged Firebase session and cancellation boundaries (all SDK calls moc
   it("cancels an active upload on sign-out and never finalizes it", async () => {
     const result = adapter().uploadReferences(files(), attempt, false, vi.fn());
     const rejected = expect(result).rejects.toThrow();
-    await vi.waitFor(() => expect(m.upload).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(m.upload).toHaveBeenCalledTimes(2));
     changeAccount();
     expect(cancel).toHaveBeenCalledOnce();
     await rejected;
@@ -445,7 +445,7 @@ it("cancels an active upload when refreshed session claims cannot be verified", 
   const api = adapter();
   const upload = api.uploadReferences(files(), attempt, false, vi.fn());
   const rejected = expect(upload).rejects.toThrow();
-  await vi.waitFor(() => expect(m.upload).toHaveBeenCalledOnce());
+  await vi.waitFor(() => expect(m.upload).toHaveBeenCalledTimes(2));
   m.token.mockRejectedValue(new Error("Token unavailable"));
   authChanged(auth.currentUser);
   await vi.waitFor(() => expect(cancel).toHaveBeenCalledOnce());
@@ -468,4 +468,51 @@ it("keeps an admitted refreshed session working and removes its observer on disp
   expect(next).toHaveBeenLastCalledWith(null);
   expect(m.stopAuth).toHaveBeenCalledOnce();
   expect(m.stopSnapshot).toHaveBeenCalledOnce();
+});
+
+it("overlaps only two uploads, reports aggregate progress, and finalizes once both workers finish", async () => {
+  const pending: { done: () => void; progress: (s: { bytesTransferred: number; totalBytes: number }) => void }[] = [];
+  let active = 0, peak = 0;
+  m.upload.mockImplementation(() => {
+    active++; peak = Math.max(peak, active);
+    return { cancel: vi.fn(), on: (_event: string, progress: any, _fail: any, done: () => void) => {
+      pending.push({ progress, done: () => { active--; done(); } });
+    } };
+  });
+  const progress = vi.fn();
+  const upload = adapter().uploadReferences(files(), attempt, false, progress);
+  await vi.waitFor(() => expect(pending).toHaveLength(2));
+  pending[0].progress({ bytesTransferred: 1024, totalBytes: 2048 });
+  expect(progress).toHaveBeenLastCalledWith(0.125);
+  pending[0].done();
+  await vi.waitFor(() => expect(pending).toHaveLength(3));
+  expect(m.call.mock.calls.map(c => c[0])).not.toContain('finalizeReferenceUploadSession');
+  pending[1].done();
+  await vi.waitFor(() => expect(pending).toHaveLength(4));
+  pending[2].done(); pending[3].done();
+  await expect(upload).resolves.toMatchObject({ uploadStatus: 'completed' });
+  expect(peak).toBe(2); expect(active).toBe(0);
+  expect(progress).toHaveBeenLastCalledWith(1);
+  expect(m.call.mock.calls.filter(c => c[0] === 'finalizeReferenceUploadSession')).toHaveLength(1);
+});
+
+it("a failed transfer cancels its sibling and never finalizes a partial upload", async () => {
+  const failures: ((error: Error) => void)[] = [];
+  const cancellations: ReturnType<typeof vi.fn>[] = [];
+  m.upload.mockImplementation(() => {
+    let fail!: (error: Error) => void;
+    const cancel = vi.fn(() => fail(new Error('Cancelled sibling')));
+    cancellations.push(cancel);
+    return { cancel, on: (_event: string, _progress: unknown, reject: typeof fail) => {
+      fail = reject; failures.push(reject);
+    } };
+  });
+  const upload = adapter().uploadReferences(files(), attempt, false, vi.fn());
+  const rejected = expect(upload).rejects.toThrow('Network interrupted');
+  await vi.waitFor(() => expect(failures).toHaveLength(2));
+  failures[0](new Error('Network interrupted'));
+  await rejected;
+  expect(cancellations[1]).toHaveBeenCalledOnce();
+  expect(m.upload).toHaveBeenCalledTimes(2);
+  expect(m.call.mock.calls.map(c => c[0])).toEqual(['createReferenceUploadSession']);
 });

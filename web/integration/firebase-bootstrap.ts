@@ -5,7 +5,8 @@ import { getAuth, getIdTokenResult, indexedDBLocalPersistence, setPersistence,
   signInWithCustomToken } from "firebase/auth";
 import { initializeAppCheck, ReCaptchaEnterpriseProvider, getToken } from "firebase/app-check";
 import { getFirestore } from "firebase/firestore";
-import { getFunctions, httpsCallable } from "firebase/functions";
+import { getFunctions } from "firebase/functions";
+import { studioCallable } from "./studio-callable";
 import { getStorage } from "firebase/storage";
 import { createFirebaseAdapter, type WebCheckout } from "./firebase-adapter";
 import { browserIdentity } from "./browser-identity";
@@ -49,8 +50,8 @@ async function connect(config: StudioFirebaseConfig) {
   const auth = getAuth(app);
   await setPersistence(auth, indexedDBLocalPersistence);
   const functions = getFunctions(app, config.functionsRegion);
-  const response = await httpsCallable<{ secret: string }, WebSession & { customToken: string }>(
-    functions, "authWithWebSession", { timeout: 30000 },
+  const response = await studioCallable<{ secret: string }, WebSession & { customToken: string }>(
+    functions, "authWithWebSession", 30000,
   )({ secret });
   const session = response.data;
   if (!validWebSession(session) || session.webAppId !== config.firebase.appId ||
@@ -62,14 +63,14 @@ async function connect(config: StudioFirebaseConfig) {
   if (!admittedWebClaims(user.uid, token.claims, session)) {
     throw new Error("The studio could not verify your sign-in.");
   }
-  const create = httpsCallable<{ orderId: string; email: string; attribution?: Acquisition; analytics?: ReturnType<typeof analyticsContext> }, WebCheckout>(
-    functions, "createWebCheckout", { timeout: 95000 },
+  const create = studioCallable<{ orderId: string; email: string; attribution?: Acquisition; analytics?: ReturnType<typeof analyticsContext> }, WebCheckout>(
+    functions, "createWebCheckout", 95000,
   );
-  const status = httpsCallable<{ orderId: string }, WebCheckout>(
-    functions, "getWebCheckoutStatus", { timeout: 25000 },
+  const status = studioCallable<{ orderId: string }, WebCheckout>(
+    functions, "getWebCheckoutStatus", 25000,
   );
-  const cancel = httpsCallable<{ orderId: string }, WebCheckout>(
-    functions, "cancelWebCheckout", { timeout: 95000 },
+  const cancel = studioCallable<{ orderId: string }, WebCheckout>(
+    functions, "cancelWebCheckout", 95000,
   );
   return createFirebaseAdapter({
     auth, appCheck, functions, db: getFirestore(app), storage: getStorage(app),

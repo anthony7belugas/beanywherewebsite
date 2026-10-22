@@ -42,6 +42,7 @@ import { galleryRefreshMessage, galleryState, photoRetryState } from "./lib/gall
 import { suggestedEmail } from "./lib/email";
 import { prepareReference, preparePhotoDownload, canSharePhotos, type PreparedPhotos } from "./lib/media";
 import type {
+  CheckoutProgress,
   Draft,
   Pack,
   Photo,
@@ -268,10 +269,13 @@ export default function App() {
     );
   if (!loaded)
     return (
-      <main className="fatal">
-        <LoaderCircle className="spin" />
-        <p>Opening your photoshoot…</p>
-      </main>
+      <>
+        <StudioHeader path={path} count={0} />
+        <main className="shell main" aria-busy="true">
+          <h1>{path === "/library" ? "My photos" : path === "/checkout" ? "Review your photoshoot" : "Your photoshoot"}</h1>
+          <GalleryLoading />
+        </main>
+      </>
     );
   const draft = state.draft;
   const returnedOrder = liveMode ? new URLSearchParams(window.location.search).get("checkout") : null;
@@ -307,17 +311,7 @@ export default function App() {
           About this draft <Info size={12} />
         </button>
       </div>}
-      <header className="header">
-        <div className="shell header-inner">
-          <a className="wordmark" href={homeHref} aria-label="BeAnywhere home">BeAnywhere</a>
-          <nav aria-label="Main navigation">
-            <a className="android-link" href="https://play.google.com/store/apps/details?id=com.besties.photo">Google Play ↗</a>
-            <a className={path === "/library" || path.startsWith("/gallery/") ? "active" : ""} href="#/library">
-              My photos{state.shoots.length > 0 && <span className="count">{state.shoots.length}</span>}
-            </a>
-          </nav>
-        </div>
-      </header>
+      <StudioHeader path={path} count={state.shoots.length} />
       {offline && (
         <div className="offline">
           You’re offline. Saved draft data is available; uncached preview images
@@ -411,7 +405,7 @@ export default function App() {
             </div>
           </div>
         </div>}
-        {path === "/library" && <Library shoots={state.shoots} email={state.recoveryEmail || state.email} now={now} onSettings={() => setDialog("account")} />}
+        {path === "/library" && <Library shoots={state.shoots} loading={state.galleryLoading} email={state.recoveryEmail || state.email} now={now} onSettings={() => setDialog("account")} />}
         {currentShoot && (
           <Gallery
             key={currentShoot.id}
@@ -427,8 +421,8 @@ export default function App() {
             <a className="back-link" href="#/library"><ArrowLeft size={15} />My photos</a>
             <p className="eyebrow">YOUR PERSONAL GALLERY</p>
             <h1>Your photos, <em>right here.</em></h1>
-            <GalleryRecovery key={requestedShootId} email={state.recoveryEmail || state.email} hasShoots={false}
-              targetShootId={requestedShootId} onRecovered={() => {}} />
+            {state.galleryLoading ? <GalleryLoading /> : <GalleryRecovery key={requestedShootId} email={state.recoveryEmail || state.email} hasShoots={false}
+              targetShootId={requestedShootId} onRecovered={() => {}} />}
             <p className="muted small">Your delivery email also has your photos attached, ready to save.</p>
           </section>
         )}
@@ -1136,7 +1130,18 @@ function Checkout({
   const emailSuggestion = suggestedEmail(email);
   const [busy, setBusy] = useState(false);
   const [attemptStarted, setAttemptStarted] = useState(false);
+  const [progress, setProgress] = useState<CheckoutProgress>({ stage: "preparing" });
+  const [takingLonger, setTakingLonger] = useState(false);
   const [error, setError] = useState("");
+  useEffect(() => {
+    setTakingLonger(false);
+    if (!busy) return;
+    const timer = window.setTimeout(() => setTakingLonger(true), 15000);
+    return () => window.clearTimeout(timer);
+  }, [busy]);
+  const progressLabel = progress.stage === "uploading" ? "Uploading your selfies…"
+    : progress.stage === "checking" ? "Checking your photoshoot…"
+    : progress.stage === "opening" ? "Opening secure checkout…" : "Preparing your photoshoot…";
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (busy) return;
@@ -1152,7 +1157,7 @@ function Checkout({
     try {
       service.track?.("delivery_email_submitted",{packId:draft.packId,styling:draft.styling});
       trackWeb("begin_checkout",{packId:draft.packId,styleId:draft.styleId,styling:draft.styling});
-      const shoot = await service.checkout(draft, checked.email);
+      const shoot = await service.checkout(draft, checked.email, setProgress);
       if ("kind" in shoot && shoot.kind === "payment") {
         if (shoot.url) { window.location.assign(shoot.url); return; }
         window.history.replaceState(null, "", `${window.location.pathname}?checkout=${encodeURIComponent(shoot.orderId)}${window.location.hash}`);
@@ -1263,7 +1268,7 @@ function Checkout({
             {busy ? (
               <>
                 <LoaderCircle size={17} className="spin" />
-                {liveMode ? "Preparing secure checkout…" : "Creating your demo…"}
+                {liveMode ? progressLabel : "Creating your demo…"}
               </>
             ) : (
               <>
@@ -1271,6 +1276,14 @@ function Checkout({
               </>
             )}
           </button>
+          {busy && liveMode && <div className="checkout-progress">
+            <span className="sr-only" role="status">{progressLabel}</span>
+            {progress.stage === "uploading" && <div className="upload-progress">
+              <progress aria-label="Selfie upload" max={1} value={progress.fraction || 0} />
+              <span>{Math.round((progress.fraction || 0) * 100)}%</span>
+            </div>}
+            {takingLonger && <p className="input-note" role="status">This is taking a little longer. Keep this page open while we finish preparing checkout.</p>}
+          </div>}
           <p className="fine-print terms-line">
             By continuing, you agree to the{" "}
             <button type="button" onClick={onTerms}>
@@ -1289,7 +1302,26 @@ function Checkout({
   );
 }
 
-function Library({ shoots, email, now, onSettings }: { shoots: Shoot[]; email: string; now: number; onSettings: () => void }) {
+function StudioHeader({ path, count }: { path: string; count: number }) {
+  return <header className="header"><div className="shell header-inner">
+    <a className="wordmark" href={homeHref} aria-label="BeAnywhere home">BeAnywhere</a>
+    <nav aria-label="Main navigation">
+      <a className="android-link" href="https://play.google.com/store/apps/details?id=com.besties.photo">Google Play ↗</a>
+      <a className={path === "/library" || path.startsWith("/gallery/") ? "active" : ""} href="#/library">
+        My photos{count > 0 && <span className="count">{count}</span>}
+      </a>
+    </nav>
+  </div></header>;
+}
+
+function GalleryLoading() {
+  return <div className="gallery-loading" role="status">
+    <p><LoaderCircle size={18} className="spin" aria-hidden="true" /> Loading your photoshoot…</p>
+    <div className="gallery-placeholder" aria-hidden="true" />
+  </div>;
+}
+
+function Library({ shoots, loading, email, now, onSettings }: { shoots: Shoot[]; loading?: boolean; email: string; now: number; onSettings: () => void }) {
   return (
     <section className="library">
 
@@ -1301,7 +1333,7 @@ function Library({ shoots, email, now, onSettings }: { shoots: Shoot[]; email: s
         </a>
       </div>
       <div className="library-guidance"><p>{liveMode ? "Your photoshoots, all in one place. Open a gallery to download photos or use a reshoot." : "Your saved sample photoshoots in this browser."}</p></div>
-      {liveMode && <GalleryRecovery email={email} hasShoots={shoots.length > 0} onRecovered={() => {}} />}
+      {liveMode && (!loading || shoots.length > 0) && <GalleryRecovery email={email} hasShoots={shoots.length > 0} onRecovered={() => {}} />}
       {shoots.length > 0 && <div className="library-toolbar">
         <span>
           {shoots.length}{" "}
@@ -1355,7 +1387,7 @@ function Library({ shoots, email, now, onSettings }: { shoots: Shoot[]; email: s
             );
           })}
         </div>
-      ) : !liveMode || shoots.length > 0 ? (
+      ) : loading ? <GalleryLoading /> : !liveMode || shoots.length > 0 ? (
         <Empty
           icon={<Images size={36} strokeWidth={1} />}
           title="Your photos will appear here."
