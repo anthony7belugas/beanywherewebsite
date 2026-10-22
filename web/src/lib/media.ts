@@ -134,45 +134,57 @@ export async function preparePhotoDownload(
   };
   try {
     active();
-    const files: Record<string, Uint8Array> = {};
-    for (const p of photos) {
-      if (options.loadPhoto) {
-        const blob = await photoStep(options.loadPhoto(p), 30000, controller.signal);
-        const bytes = new Uint8Array(await photoStep(blob.arrayBuffer(), 30000, controller.signal));
-        active();
-        const jpeg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
-        const png = bytes.slice(0, 8).join(",") === "137,80,78,71,13,10,26,10";
-        const webp = String.fromCharCode(...bytes.slice(0, 4)) === "RIFF" &&
-          String.fromCharCode(...bytes.slice(8, 12)) === "WEBP";
-        if (bytes.length < 12 || bytes.length > 20 * 1024 * 1024 || !(jpeg || png || webp)) {
-          throw new Error("This photo could not be downloaded. Please try again.");
+    const entries: [string, Uint8Array][] = new Array(photos.length);
+    let cursor = 0;
+    const loadNext = async () => {
+      try {
+        while (cursor < photos.length) {
+          active();
+          const index = cursor++;
+          const p = photos[index];
+          if (options.loadPhoto) {
+            const blob = await photoStep(options.loadPhoto(p), 30000, controller.signal);
+            const bytes = new Uint8Array(await photoStep(blob.arrayBuffer(), 30000, controller.signal));
+            active();
+            const jpeg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+            const png = bytes.slice(0, 8).join(",") === "137,80,78,71,13,10,26,10";
+            const webp = String.fromCharCode(...bytes.slice(0, 4)) === "RIFF" &&
+              String.fromCharCode(...bytes.slice(8, 12)) === "WEBP";
+            if (bytes.length < 12 || bytes.length > 20 * 1024 * 1024 || !(jpeg || png || webp)) {
+              throw new Error("This photo could not be downloaded. Please try again.");
+            }
+            entries[index] = [`${title}-${p.slotId}.${jpeg ? "jpg" : png ? "png" : "webp"}`, bytes];
+            continue;
+          }
+          const response = await fetch(p.url, { signal: controller.signal });
+          if (!response.ok)
+            throw new Error("A preview image could not be downloaded. Try again.");
+          if (
+            response.headers.get("content-type")?.split(";")[0].trim() !==
+            "image/webp"
+          )
+            throw new Error(
+              "The server did not return a valid preview image. Restart the local preview and try again.",
+            );
+          const bytes = new Uint8Array(await photoStep(response.arrayBuffer(), 30000, controller.signal));
+          active();
+          if (
+            bytes.length < 12 ||
+            bytes.length > 20 * 1024 * 1024 ||
+            String.fromCharCode(...bytes.slice(0, 4)) !== "RIFF" ||
+            String.fromCharCode(...bytes.slice(8, 12)) !== "WEBP"
+          )
+            throw new Error(
+              "The server did not return a valid preview image. Try again.",
+            );
+          entries[index] = [`${title}-sample-${p.slotId}.webp`, bytes];
         }
-        files[`${title}-${p.slotId}.${jpeg ? "jpg" : png ? "png" : "webp"}`] = bytes;
-        continue;
-      }
-      const response = await fetch(p.url, { signal: controller.signal });
-      if (!response.ok)
-        throw new Error("A preview image could not be downloaded. Try again.");
-      if (
-        response.headers.get("content-type")?.split(";")[0].trim() !==
-        "image/webp"
-      )
-        throw new Error(
-          "The server did not return a valid preview image. Restart the local preview and try again.",
-        );
-      const bytes = new Uint8Array(await photoStep(response.arrayBuffer(), 30000, controller.signal));
-      active();
-      if (
-        bytes.length < 12 ||
-        bytes.length > 20 * 1024 * 1024 ||
-        String.fromCharCode(...bytes.slice(0, 4)) !== "RIFF" ||
-        String.fromCharCode(...bytes.slice(8, 12)) !== "WEBP"
-      )
-        throw new Error(
-          "The server did not return a valid preview image. Try again.",
-        );
-      files[`${title}-sample-${p.slotId}.webp`] = bytes;
-    }
+      } catch (error) { controller.abort(error); throw error; }
+    };
+    // Two transfers overlap network waits; preserve selection order even when
+    // replies arrive out of order. A failure stops both workers before more work.
+    await Promise.all([loadNext(), loadNext()]);
+    const files = Object.fromEntries(entries);
     if (options.beforeSave) await photoStep(options.beforeSave(), 120000, controller.signal);
     active();
     const prepared = Object.entries(files).map(([name, bytes]) => new File([bytes as BlobPart], name, {
@@ -184,7 +196,9 @@ export async function preparePhotoDownload(
       if (options.sample !== false) archive["ABOUT-THESE-SAMPLES.txt"] = strToU8(
         "BeAnywhere private draft. These are existing marketing preview images, repeated across the 12-photo demo. They were not generated from your uploaded selfies. No payment was taken.",
       );
-      saveBlob(new Blob([zipSync(archive) as BlobPart], { type: "application/zip" }),
+      // JPEG/PNG/WebP are already compressed. Store them without blocking the UI
+      // to recompress the full set; the photo bytes and quality are unchanged.
+      saveBlob(new Blob([zipSync(archive, { level: 0 }) as BlobPart], { type: "application/zip" }),
         `BeAnywhere-${title}${options.sample === false ? "" : "-samples"}.zip`);
     } };
   } catch (error) {

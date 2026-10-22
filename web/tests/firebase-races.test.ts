@@ -16,6 +16,7 @@ const m = vi.hoisted(() => ({
   onSnapshot: vi.fn(),
   upload: vi.fn(),
   getBlob: vi.fn(),
+  metadata: vi.fn(),
   orderBy: vi.fn(),
   stopSnapshot: vi.fn(),
   stopAuth: vi.fn(),
@@ -45,6 +46,7 @@ vi.mock("firebase/storage", () => ({
   ref: (_s: unknown, path: string) => path,
   uploadBytesResumable: m.upload,
   getBlob: m.getBlob,
+  getMetadata: m.metadata,
 }));
 
 const job: NativeJobProjection = {
@@ -124,6 +126,7 @@ beforeEach(() => {
   m.getDocs.mockResolvedValue({ docs: [{ id: "j", data: () => job }] });
   m.getDoc.mockResolvedValue({ data: () => job });
   m.getBlob.mockResolvedValue(new Blob(["sample"]));
+  m.metadata.mockRejectedValue(Object.assign(new Error("Not uploaded"), { code: "storage/object-not-found" }));
   m.onSnapshot.mockImplementation((_ref, cb) => {
     snapshot = cb;
     return m.stopSnapshot;
@@ -515,4 +518,68 @@ it("a failed transfer cancels its sibling and never finalizes a partial upload",
   expect(cancellations[1]).toHaveBeenCalledOnce();
   expect(m.upload).toHaveBeenCalledTimes(2);
   expect(m.call.mock.calls.map(c => c[0])).toEqual(['createReferenceUploadSession']);
+});
+
+it("resumes a partial immutable upload by sending only missing selfies", async () => {
+  const saved = new Set(uploadSession().fullPaths.slice(0, 2));
+  m.call.mockImplementation(async name => ({ data: name === 'createReferenceUploadSession'
+    ? { ...uploadSession(), replayed: true }
+    : { completed: true, fullPaths: uploadSession().fullPaths } }));
+  m.metadata.mockImplementation(async path => {
+    if (!saved.has(path)) throw Object.assign(new Error('Missing'), {code:'storage/object-not-found'});
+    return { fullPath: path, size: 2048, contentType: 'image/jpeg' };
+  });
+  m.upload.mockImplementation(path => ({ cancel: vi.fn(), on: (_e: string, _p: unknown, fail: (e: Error) => void, done: () => void) => {
+    if (saved.has(path)) fail(Object.assign(new Error('Immutable object cannot be overwritten'), {code:'storage/unauthorized'}));
+    else { saved.add(path); done(); }
+    return () => {};
+  } }));
+  const result = await adapter().uploadReferences(files(), attempt, false, vi.fn());
+  expect(result.uploadStatus).toBe('completed');
+  expect(m.upload.mock.calls.map(call => call[0])).toEqual(uploadSession().fullPaths.slice(2));
+  expect(saved.size).toBe(4);
+});
+
+it.each(['storage/unauthorized', 'storage/retry-limit-exceeded'])(
+  'recovers a lost upload acknowledgement only after Storage confirms it (%s)', async code => {
+    m.upload.mockImplementation(() => ({ cancel: vi.fn(),
+      on: (_e: string, _p: unknown, fail: (e: Error) => void) => {
+        fail(Object.assign(new Error('Lost acknowledgement'), { code })); return () => {};
+      } }));
+    m.metadata.mockImplementation(async path => ({ fullPath: path, size: 2048, contentType: 'image/jpeg' }));
+    expect((await adapter().uploadReferences(files(), attempt, false, vi.fn())).uploadStatus).toBe('completed');
+    expect(m.upload).toHaveBeenCalledTimes(4);
+    expect(m.metadata).toHaveBeenCalledTimes(4);
+  },
+);
+
+it.each(['mismatch', 'denied', 'signed-out'])(
+  'does not overwrite or finalize an unverifiable saved selfie (%s)', async failure => {
+    m.call.mockResolvedValue({ data: { ...uploadSession(), replayed: true } });
+    m.metadata.mockImplementation(async path => {
+      if (failure === 'denied') throw Object.assign(new Error('Access denied'), {code:'storage/unauthorized'});
+      if (failure === 'signed-out') changeAccount();
+      return { fullPath: path, size: failure === 'mismatch' ? 4096 : 2048, contentType: 'image/jpeg' };
+    });
+    await expect(adapter().uploadReferences(files(), attempt, false, vi.fn())).rejects.toThrow();
+    expect(m.upload).not.toHaveBeenCalled();
+    expect(m.call.mock.calls.map(call => call[0])).toEqual(['createReferenceUploadSession']);
+  },
+);
+
+it('reports transferred bytes correctly when the selfies have different sizes', async () => {
+  const tasks: { progress: (value: {bytesTransferred:number;totalBytes:number}) => void; done: () => void }[] = [];
+  m.upload.mockImplementation(() => ({ cancel: vi.fn(), on: (_e: string, progress: typeof tasks[number]['progress'], _fail: unknown, done: () => void) => {
+    tasks.push({progress, done}); return () => {};
+  } }));
+  const sizes = [2048, 8192, 4096, 2048];
+  const progress = vi.fn();
+  const request = adapter().uploadReferences(sizes.map(size => new Blob([new Uint8Array(size)], {type:'image/jpeg'})), attempt, false, progress);
+  await vi.waitFor(() => expect(tasks).toHaveLength(2));
+  tasks[0].progress({bytesTransferred:2048,totalBytes:2048});
+  expect(progress).toHaveBeenLastCalledWith(2048 / 16384);
+  tasks[0].done(); tasks[1].done();
+  await vi.waitFor(() => expect(tasks).toHaveLength(4));
+  tasks[2].done(); tasks[3].done(); await request;
+  expect(progress).toHaveBeenLastCalledWith(1);
 });

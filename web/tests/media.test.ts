@@ -194,3 +194,32 @@ it("saves a valid selected image after the final access check succeeds", async (
   expect(anchor.click).toHaveBeenCalledOnce();
   await vi.advanceTimersByTimeAsync(5001);
 });
+
+it('downloads two photos at a time and preserves selection order despite out-of-order replies', async () => {
+  const bytes = readFileSync('public/assets/scenes/paris/w/chic/0.webp');
+  const pending: (() => void)[] = [];
+  let active = 0, peak = 0;
+  const loadPhoto = vi.fn(() => new Promise<Blob>(resolve => {
+    active++; peak = Math.max(peak, active);
+    pending.push(() => { active--; resolve(new Blob([bytes])); });
+  }));
+  const beforeSave = vi.fn(async () => { expect(active).toBe(0); });
+  const result = preparePhotoDownload(Array.from({length:4}, (_,i) => ({...photo,slotId:`s${i}`})), 'Paris', {loadPhoto,beforeSave});
+  await vi.waitFor(() => expect(pending).toHaveLength(2));
+  pending[1](); await vi.waitFor(() => expect(pending).toHaveLength(3));
+  pending[0](); await vi.waitFor(() => expect(pending).toHaveLength(4));
+  pending[3](); pending[2]();
+  expect((await result).files.map(file => file.name)).toEqual(['Paris-s0.webp','Paris-s1.webp','Paris-s2.webp','Paris-s3.webp']);
+  expect(peak).toBe(2); expect(beforeSave).toHaveBeenCalledOnce();
+});
+
+it('stops queued downloads after a failure and never offers a partial archive', async () => {
+  let fail!: (error: Error) => void;
+  const loadPhoto = vi.fn(() => new Promise<Blob>((_resolve,reject) => { fail ||= reject; }));
+  const beforeSave = vi.fn();
+  const result = expect(preparePhotoDownload(Array.from({length:4}, (_,i) => ({...photo,slotId:`s${i}`})), 'Paris', {loadPhoto,beforeSave}))
+    .rejects.toThrow('Access changed');
+  await vi.waitFor(() => expect(loadPhoto).toHaveBeenCalledTimes(2));
+  fail(new Error('Access changed')); await result;
+  expect(loadPhoto).toHaveBeenCalledTimes(2); expect(beforeSave).not.toHaveBeenCalled();
+});

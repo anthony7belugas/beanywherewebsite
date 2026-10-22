@@ -26,6 +26,7 @@ import {
   ref,
   uploadBytesResumable,
   getBlob,
+  getMetadata,
 } from "firebase/storage";
 import type { AppCheck } from "firebase/app-check";
 import { getToken } from "firebase/app-check";
@@ -88,6 +89,7 @@ export type UploadSession = {
   thumbPaths: string[];
   expiresAtMs: number;
   uploadStatus: "open" | "finalizing" | "completed";
+  replayed?: boolean;
 };
 export type ReshootOperation = {
   schemaVersion: 1;
@@ -364,6 +366,25 @@ export function createFirebaseAdapter(deps: AdapterDependencies) {
       // Two transfers overlap network waits without flooding mobile connections.
       // On any failure, cancel and await the other transfer before allowing retry.
       const fractions = files.map(() => 0);
+      const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
+      const reportProgress = () => onProgress(fractions.reduce((sum, fraction, i) =>
+        sum + fraction * files[i].size, 0) / totalBytes);
+      const alreadyUploaded = async (i: number) => {
+        assertSession(signal);
+        try {
+          const metadata = await getMetadata(ref(storage, upload.fullPaths[i]));
+          assertSession(signal);
+          if (metadata.fullPath !== upload.fullPaths[i] || metadata.size !== files[i].size ||
+              metadata.contentType !== "image/jpeg") {
+            throw new Error("A saved selfie does not match this upload. Edit your selfies before trying again.");
+          }
+          return true;
+        } catch (error) {
+          assertSession(signal);
+          if ((error as { code?: string }).code === "storage/object-not-found") return false;
+          throw error;
+        }
+      };
       const active = new Set<() => void>();
       let cursor = 0, failed = false;
       let failure: unknown;
@@ -373,6 +394,14 @@ export function createFirebaseAdapter(deps: AdapterDependencies) {
           try {
             await ready(signal);
             assertSession(signal);
+            if (failed) return;
+            // Objects are create-only. A replay must reuse acknowledged files,
+            // including those completed before another transfer failed.
+            if (upload.replayed && await alreadyUploaded(i)) {
+              fractions[i] = 1;
+              if (!failed) reportProgress();
+              continue;
+            }
             if (failed) return;
             const task = uploadBytesResumable(ref(storage, upload.fullPaths[i]), files[i],
               { contentType: "image/jpeg", cacheControl: "private,max-age=86400" });
@@ -384,9 +413,15 @@ export function createFirebaseAdapter(deps: AdapterDependencies) {
               await new Promise<void>((resolve, reject) => task.on("state_changed", s => {
                 if (!signal?.aborted && !invalidated && !failed && auth.currentUser === admittedUser) {
                   fractions[i] = s.bytesTransferred / s.totalBytes;
-                  onProgress(fractions.reduce((sum, value) => sum + value, 0) / files.length);
+                  reportProgress();
                 }
               }, reject, resolve));
+            } catch (error) {
+              // Another tab, or a lost success reply, may have completed this
+              // immutable object. Confirm it exists before accepting that result.
+              assertSession(signal);
+              if (!['storage/unauthorized', 'storage/retry-limit-exceeded', 'storage/unknown']
+                .includes((error as { code?: string }).code || '') || !await alreadyUploaded(i)) throw error;
             } finally {
               signal?.removeEventListener("abort", abort);
               active.delete(abort); teardown.delete(abort);
@@ -394,7 +429,7 @@ export function createFirebaseAdapter(deps: AdapterDependencies) {
             assertSession(signal);
             if (!failed) {
               fractions[i] = 1;
-              onProgress(fractions.reduce((sum, value) => sum + value, 0) / files.length);
+              reportProgress();
             }
           } catch (error) {
             if (!failed) {

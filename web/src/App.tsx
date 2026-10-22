@@ -171,9 +171,14 @@ export default function App() {
     return () => window.removeEventListener("hashchange", change);
   }, []);
   useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 500);
-    return () => clearInterval(t);
-  }, []);
+    if (!loaded || !(path === "/library" || path.startsWith("/gallery/"))) return;
+    // Only visible photo screens need a clock for reveal/retry deadlines.
+    const update = () => { if (!document.hidden) setNow(Date.now()); };
+    update();
+    const t = setInterval(update, 500);
+    document.addEventListener("visibilitychange", update);
+    return () => { clearInterval(t); document.removeEventListener("visibilitychange", update); };
+  }, [loaded, path]);
   useEffect(() => {
     if (!liveMode || !loaded || !(path === "/library" || path.startsWith("/gallery/"))) return;
     setGalleryRefreshing(false);
