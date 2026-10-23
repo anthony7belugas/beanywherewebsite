@@ -30,7 +30,7 @@ import {
 } from "firebase/storage";
 import type { AppCheck } from "firebase/app-check";
 import { getToken } from "firebase/app-check";
-import type { Pack, Styling } from "../src/lib/types";
+import type { Pack, Styling, CheckoutCode, ComplimentaryCheckout } from "../src/lib/types";
 import { admittedWebClaims, validWebSession, type WebSession } from "./web-session";
 export type { WebSession } from "./web-session";
 
@@ -477,6 +477,20 @@ export function createFirebaseAdapter(deps: AdapterDependencies) {
       uploadSessionId: string;
     }) {
       return call<{ orderId: string }>("createOrder", input);
+    },
+    getWebCheckoutCode(checkoutKey: string) {
+      return call<CheckoutCode | null>("getWebCheckoutCode", { checkoutKey });
+    },
+    claimWebCheckoutCode(checkoutKey: string, code: string) {
+      return call<CheckoutCode>("claimWebCheckoutCode", { checkoutKey, code });
+    },
+    async startWebComplimentaryCheckout(checkoutKey: string, orderId: string, email: string) {
+      const result = await call<ComplimentaryCheckout>("startWebComplimentaryCheckout", { checkoutKey, orderId, email }, 95000);
+      if (result?.kind !== "complimentary" || result.orderId !== orderId
+          || typeof result.jobId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(result.jobId)) {
+        throw new Error("Your complimentary photoshoot could not be verified. Try again.");
+      }
+      return result;
     },
     async beginWebCheckout(orderId: string, email: string, attribution?: Acquisition) {
       if (typeof email !== "string" || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))

@@ -1162,6 +1162,29 @@ function Checkout({
   const [progress, setProgress] = useState<CheckoutProgress>({ stage: "preparing" });
   const [takingLonger, setTakingLonger] = useState(false);
   const [error, setError] = useState("");
+  const [codeOpen, setCodeOpen] = useState(false);
+  const [code, setCode] = useState("");
+  const [hasCode, setHasCode] = useState(false);
+  const [codeBusy, setCodeBusy] = useState(false);
+  const [codeError, setCodeError] = useState("");
+  useEffect(() => {
+    if (!service.checkoutCode) return;
+    let active = true;
+    setHasCode(false); setCodeBusy(true); setCodeError("");
+    service.checkoutCode(draft).then(claim => { if (active) setHasCode(!!claim); })
+      .catch(() => { if (active) setCodeError("We couldn’t check your saved code. Try again before starting."); })
+      .finally(() => { if (active) setCodeBusy(false); });
+    return () => { active = false; };
+  }, [draft.checkoutKey, draft.referenceVersion, draft.wearsGlasses]);
+  async function applyCode() {
+    if (busy || codeBusy || !service.checkoutCode) return;
+    setCodeBusy(true); setCodeError("");
+    try {
+      const claim = await service.checkoutCode(draft, code);
+      setHasCode(!!claim); setCode("");
+    } catch (e) { setCodeError((e as Error).message); }
+    finally { setCodeBusy(false); }
+  }
   useEffect(() => {
     setTakingLonger(false);
     if (!busy) return;
@@ -1170,10 +1193,10 @@ function Checkout({
   }, [busy]);
   const progressLabel = progress.stage === "uploading" ? "Uploading your selfies…"
     : progress.stage === "checking" ? "Checking your photoshoot…"
-    : progress.stage === "opening" ? "Opening secure checkout…" : "Preparing your photoshoot…";
+    : progress.stage === "opening" ? (hasCode ? "Starting your photoshoot…" : "Opening secure checkout…") : "Preparing your photoshoot…";
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (busy) return;
+    if (busy || codeBusy) return;
     const checked = { ...draft, email: email.trim() };
     const invalid = validateDraft(checked);
     if (invalid) {
@@ -1185,18 +1208,21 @@ function Checkout({
     setError("");
     try {
       service.track?.("delivery_email_submitted",{packId:draft.packId,styling:draft.styling});
-      trackWeb("begin_checkout",{packId:draft.packId,styleId:draft.styleId,styling:draft.styling});
+      if (!hasCode) trackWeb("begin_checkout",{packId:draft.packId,styleId:draft.styleId,styling:draft.styling});
       const shoot = await service.checkout(draft, checked.email, setProgress);
       if ("kind" in shoot && shoot.kind === "payment") {
         if (shoot.url) { window.location.assign(shoot.url); return; }
         window.history.replaceState(null, "", `${window.location.pathname}?checkout=${encodeURIComponent(shoot.orderId)}${window.location.hash}`);
         go("/payment");
+      } else if ("kind" in shoot && shoot.kind === "complimentary") {
+        window.history.replaceState(null, "", `${window.location.pathname}${window.location.hash}`);
+        go(`/gallery/${shoot.jobId}`);
       } else if ("id" in shoot) {
         go(`/gallery/${shoot.id}`);
         notify("Demo shoot created. No payment was taken.");
       }
     } catch (e) {
-      service.track?.("purchase_failed",{packId:draft.packId,styling:draft.styling,reason:analyticsErrorCode(e)});
+      if (!hasCode) service.track?.("purchase_failed",{packId:draft.packId,styling:draft.styling,reason:analyticsErrorCode(e)});
       setError((e as Error).message);
     } finally {
       setBusy(false);
@@ -1246,7 +1272,7 @@ function Checkout({
             maxLength={254}
           />
           <p id="email-note" className="input-note">
-            {liveMode ? "We’ll send your finished photos here. Use this email to find your photos later. You can edit it before paying." : "Saved locally for this demo. No account is created and no email is sent."}
+            {liveMode ? "We’ll send your finished photos here. Use this email to find your photos later." : "Saved locally for this demo. No account is created and no email is sent."}
           </p>
           {emailSuggestion && <p className="email-suggestion">Did you mean{" "}
             <button type="button" className="text-button" disabled={busy} onClick={() => {
@@ -1259,8 +1285,8 @@ function Checkout({
             <div className="payment-title">
               <LockKeyhole size={19} />
               <div>
-                <strong>{liveMode ? "Secure checkout" : "Demo checkout"}</strong>
-                <span>{liveMode ? "Pay securely with Stripe" : "No card details needed"}</span>
+                <strong>{hasCode ? "Complimentary photoshoot" : liveMode ? "Secure checkout" : "Demo checkout"}</strong>
+                <span>{hasCode ? "No payment needed" : liveMode ? "Pay securely with Stripe" : "No card details needed"}</span>
               </div>
               <span className="pill">{liveMode ? "ONE TIME" : "SIMULATED"}</span>
             </div>
@@ -1268,32 +1294,51 @@ function Checkout({
               <span>BeAnywhere photoshoot</span>
               <span>{money}</span>
             </div>
-            {!liveMode && <div className="receipt-line">
-              <span>Private preview adjustment</span>
+            {(!liveMode || hasCode) && <div className="receipt-line">
+              <span>{hasCode ? "Complimentary code" : "Private preview adjustment"}</span>
               <span>−{money}</span>
             </div>}
             <div className="receipt-total">
               <span>Due today</span>
               <strong>
-                {liveMode ? money : "$0.00"} <small>USD</small>
+                {liveMode && !hasCode ? money : "$0.00"} <small>USD</small>
               </strong>
             </div>
           </div>
+          {liveMode && service.checkoutCode && <div className="checkout-code">
+            {hasCode ? <p className="input-note" role="status">Code applied. Your photoshoot is complimentary.</p> : <>
+              <button className="text-button checkout-code-toggle" type="button" disabled={busy || codeBusy}
+                aria-expanded={codeOpen} aria-controls="checkout-code-entry" onClick={() => setCodeOpen(!codeOpen)}>Have a code?</button>
+              {codeOpen && <div id="checkout-code-entry">
+                <label className="field-label" htmlFor="checkout-code">Checkout code</label>
+                <div className="checkout-code-row">
+                  <input className="text-input" id="checkout-code" value={code} maxLength={32}
+                    disabled={busy || codeBusy} autoComplete="off" autoCapitalize="characters" spellCheck={false}
+                    aria-describedby={codeError ? "checkout-code-error" : undefined}
+                    onChange={e => { setCode(e.target.value); setCodeError(""); }}
+                    onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); void applyCode(); } }} />
+                  <button type="button" className="button secondary" disabled={busy || codeBusy || !code.trim()}
+                    onClick={() => void applyCode()}>{codeBusy ? "Applying…" : "Apply"}</button>
+                </div>
+              </div>}
+            </>}
+            {codeError && <p id="checkout-code-error" className="form-error" role="alert">{codeError}</p>}
+          </div>}
           <p className="checkout-disclosure">
-            {liveMode ? "We’ll use the photo delivery email above, even if your payment account uses another address. Continuing uploads your selfies and opens Stripe. AI results can vary." : "This preview uses sample images, not AI results from your selfies. Your reference photos never leave this browser."}
+            {hasCode ? "Starting uploads your selfies and prepares your complimentary photoshoot. We’ll email your finished photos to the address above. AI results can vary." : liveMode ? "We’ll use the photo delivery email above, even if your payment account uses another address. Continuing uploads your selfies and opens Stripe. AI results can vary." : "This preview uses sample images, not AI results from your selfies. Your reference photos never leave this browser."}
           </p>
           {error && (
             <p className="form-error" role="alert">
               {error}
             </p>
           )}
-          {error && attemptStarted && service.editCheckout && <button type="button" className="text-button" disabled={busy} onClick={async () => {
+          {error && attemptStarted && !hasCode && service.editCheckout && <button type="button" className="text-button" disabled={busy} onClick={async () => {
             setBusy(true);
             try { await service.editCheckout!({ review: draft }); notify("Update your email or selfies, then continue to checkout."); }
             catch (e) { setError((e as Error).message); }
             finally { setBusy(false); }
           }}>Close unpaid checkout and edit</button>}
-          <button className="button full" type="submit" disabled={busy}>
+          <button className="button full" type="submit" disabled={busy || codeBusy}>
             {busy ? (
               <>
                 <LoaderCircle size={17} className="spin" />
@@ -1301,7 +1346,7 @@ function Checkout({
               </>
             ) : (
               <>
-                {liveMode ? `Continue to pay ${money}` : "Create my demo shoot"} <ArrowRight size={17} />
+                {hasCode ? "Start free photoshoot" : liveMode ? `Continue to pay ${money}` : "Create my demo shoot"} <ArrowRight size={17} />
               </>
             )}
           </button>

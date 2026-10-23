@@ -34,6 +34,9 @@ beforeEach(async () => {
     recordConsent: vi.fn().mockResolvedValue(undefined), recordEvent: vi.fn().mockResolvedValue({ accepted: true }),
     uploadReferences: vi.fn().mockResolvedValue({ sessionId: "upload_1", uploadStatus: "completed" }),
     createOrder: vi.fn().mockResolvedValue({ orderId: "order_1" }),
+    getWebCheckoutCode: vi.fn().mockResolvedValue(null),
+    claimWebCheckoutCode: vi.fn().mockResolvedValue({ state: "claimed", orderId: null, jobId: null }),
+    startWebComplimentaryCheckout: vi.fn().mockResolvedValue({ kind: "complimentary", orderId: "order_1", jobId: "job_1" }),
     beginWebCheckout: vi.fn().mockResolvedValue(checkout()),
     reconcileWebCheckout: vi.fn().mockResolvedValue(checkout("paid")),
     cancelWebCheckout: vi.fn().mockResolvedValue(checkout("expired")),
@@ -66,6 +69,71 @@ it("uploads the reviewed selfies, freezes an order, and returns only the server 
     styling: "w", wearsGlasses: false, uploadSessionId: "upload_1" });
   expect(api.beginWebCheckout).toHaveBeenCalledExactlyOnceWith("order_1", "buyer@example.com", directAttribution());
   expect((await local.read()).draft).not.toBeNull();
+});
+
+it("Apply claims the code without uploading, ordering or paying", async () => {
+  expect(await service.checkoutCode(draft, "BA-2345-6789-ABCD")).toMatchObject({ state: "claimed" });
+  expect(api.claimWebCheckoutCode).toHaveBeenCalledExactlyOnceWith(draft.checkoutKey, "BA-2345-6789-ABCD");
+  expect(api.uploadReferences).not.toHaveBeenCalled(); expect(api.createOrder).not.toHaveBeenCalled();
+  expect(api.beginWebCheckout).not.toHaveBeenCalled(); expect(api.startWebComplimentaryCheckout).not.toHaveBeenCalled();
+});
+
+it("a server-claimed code uses the existing upload/order flow and opens the real gallery without Stripe", async () => {
+  api.getWebCheckoutCode.mockResolvedValue({ state: "claimed", orderId: null, jobId: null });
+  const result = await service.checkout(draft, "friend@example.com");
+  expect(result).toEqual({ kind: "complimentary", orderId: "order_1", jobId: "job_1" });
+  expect(api.startWebComplimentaryCheckout).toHaveBeenCalledExactlyOnceWith(draft.checkoutKey, "order_1", "friend@example.com");
+  expect(api.uploadReferences).toHaveBeenCalledTimes(1); expect(api.createOrder).toHaveBeenCalledTimes(1);
+  expect(api.beginWebCheckout).not.toHaveBeenCalled(); expect(api.reconcileWebCheckout).not.toHaveBeenCalled();
+  expect((await local.read()).draft).toBeNull();
+  expect((await service.read()).shoots.some(shoot => shoot.id === "job_1")).toBe(true);
+  expect(vi.mocked(queueStudioEvent).mock.calls.some(call => call[0] === "purchase_completed")).toBe(false);
+});
+
+it("refresh after a lost free-start reply reuses the server-bound order without another upload", async () => {
+  api.getWebCheckoutCode.mockResolvedValue({ state: "claimed", orderId: null, jobId: null });
+  api.startWebComplimentaryCheckout.mockRejectedValueOnce(new Error("reply lost"));
+  await expect(service.checkout(draft, "friend@example.com")).rejects.toThrow("reply lost");
+  api.getWebCheckoutCode.mockResolvedValue({ state: "fulfilled", orderId: "order_1", jobId: "job_1" });
+  const restored = new LiveStudioService(async () => api as API, namespace);
+  expect(await restored.checkoutCode(draft)).toMatchObject({ state: "fulfilled" });
+  expect((await restored.read()).draft).not.toBeNull();
+  await expect(restored.checkout(draft, "friend@example.com")).resolves.toMatchObject({ kind: "complimentary", jobId: "job_1" });
+  expect(api.uploadReferences).toHaveBeenCalledTimes(1); expect(api.createOrder).toHaveBeenCalledTimes(1);
+  expect(api.startWebComplimentaryCheckout.mock.calls).toEqual([
+    [draft.checkoutKey, "order_1", "friend@example.com"], [draft.checkoutKey, "order_1", "friend@example.com"],
+  ]);
+  expect(api.beginWebCheckout).not.toHaveBeenCalled();
+});
+
+it("an unavailable code check never silently sends a possibly complimentary checkout to Stripe", async () => {
+  api.getWebCheckoutCode.mockRejectedValue(new Error("connection lost"));
+  await expect(service.checkout(draft, "friend@example.com")).rejects.toThrow("connection lost");
+  expect(api.beginWebCheckout).not.toHaveBeenCalled(); expect(api.uploadReferences).not.toHaveBeenCalled();
+});
+
+it("an unfinished complimentary order is recovered before a newer checkout without calling Stripe cancellation", async () => {
+  api.getWebCheckoutCode.mockResolvedValue({ state: "claimed", orderId: null, jobId: null });
+  api.startWebComplimentaryCheckout.mockRejectedValueOnce(new Error("reply lost"));
+  await expect(service.checkout(draft, "friend@example.com")).rejects.toThrow();
+  await local.startDraft("paris", "w", "chic");
+  await local.updateDraft((await local.read()).draft!, { references: draft.references });
+  await local.updateDraft((await local.read()).draft!, { consent: true });
+  const newer = (await local.read()).draft!;
+  api.getWebCheckoutCode.mockResolvedValue(null);
+  await expect(service.checkout(newer, "new@example.com")).resolves.toMatchObject({ kind: "complimentary", jobId: "job_1" });
+  expect(api.cancelWebCheckout).not.toHaveBeenCalled(); expect(api.beginWebCheckout).not.toHaveBeenCalled();
+  expect((await local.read()).draft?.checkoutKey).toBe(newer.checkoutKey);
+});
+
+it("a gallery connection failure keeps the complimentary draft available to retry", async () => {
+  api.getWebCheckoutCode.mockResolvedValue({ state: "claimed", orderId: null, jobId: null });
+  api.listJobs.mockRejectedValueOnce(new Error("gallery unavailable"));
+  await expect(service.checkout(draft, "friend@example.com")).rejects.toThrow("gallery unavailable");
+  expect((await local.read()).draft).not.toBeNull();
+  api.getWebCheckoutCode.mockResolvedValue({ state: "fulfilled", orderId: "order_1", jobId: "job_1" });
+  await expect(service.checkout(draft, "friend@example.com")).resolves.toMatchObject({ kind: "complimentary" });
+  expect(api.uploadReferences).toHaveBeenCalledTimes(1);
 });
 
 it("a lost checkout response retries the same saved order without uploading or creating another", async () => {

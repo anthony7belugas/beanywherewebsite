@@ -6,6 +6,7 @@ const shared = new Set([
   "authWithWebSession", "listWebGalleries", "recoverWebGalleries",
   "checkPackReadiness", "createReferenceUploadSession", "commitReferenceMetadata",
   "createOrder", "createWebCheckout", "getWebCheckoutStatus", "cancelWebCheckout",
+  "claimWebCheckoutCode", "getWebCheckoutCode", "startWebComplimentaryCheckout",
 ]);
 
 export function studioCallable<Input, Output>(functions: Functions, operation: string, timeout: number) {

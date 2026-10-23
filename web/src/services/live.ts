@@ -6,7 +6,7 @@ import { LocalStudioService } from "./local";
 import { packById } from "../lib/catalog";
 import { validateDraft } from "../lib/domain";
 import { galleryRefreshMessage, photoRetryState } from "../lib/gallery-state";
-import type { CheckoutProgress, CheckoutReview, Draft, DraftGuard, DraftUpdate, Photo, Shoot, StudioService, Styling } from "../lib/types";
+import type { CheckoutProgress, CheckoutReview, ComplimentaryCheckout, Draft, DraftGuard, DraftUpdate, Photo, Shoot, StudioService, Styling } from "../lib/types";
 import type { createFirebaseAdapter, NativeJobProjection, ReshootOperation, WebCheckout, GalleryPage } from "../../integration/firebase-adapter";
 
 type API = ReturnType<typeof createFirebaseAdapter>;
@@ -14,6 +14,7 @@ type Attempt = {
   schemaVersion: 1; uid: string; key: string; review: CheckoutReview; email: string;
   attribution?: Acquisition; draft: Draft; uploadAttempt: string; uploadSessionId?: string; orderId?: string;
   settled?: "fulfilled" | "refunded";
+  complimentary?: boolean;
 };
 const reviewKey = (review: CheckoutReview) =>
   `${review.checkoutKey}:${review.referenceVersion}:${review.wearsGlasses ? 1 : 0}`;
@@ -91,7 +92,7 @@ export class LiveStudioService implements StudioService {
   private favorites: Record<string, boolean> = {};
   private watchError: Error | null = null;
   private watching?: Promise<void>;
-  private checkoutInFlight?: Promise<ReturnType<typeof result>>;
+  private checkoutInFlight?: Promise<ReturnType<typeof result> | ComplimentaryCheckout>;
   private checkoutAbort?: AbortController;
   private retries = new Map<string, Promise<void>>();
   private photoTransfers = new Map<string, Promise<Blob>>();
@@ -191,7 +192,9 @@ export class LiveStudioService implements StudioService {
             && reviewKey(attempt.review) === reviewKey(draft) && orders.has(attempt.orderId)) {
           // A gallery is a reason to check the receipt, never payment authority itself.
           // An unavailable receipt must not prevent an already-readable gallery opening.
-          await this.payment(attempt.orderId).catch(() => {});
+          // A complimentary retry stays on checkout until Start can open its gallery.
+          // Clearing that draft from a background read would hide the retry after a lost reply.
+          if (!attempt.complimentary) await this.payment(attempt.orderId).catch(() => {});
         }
       }
     })().finally(() => { this.settlingGalleries = undefined; });
@@ -290,7 +293,7 @@ export class LiveStudioService implements StudioService {
     }
     return draft;
   }
-  private async checkpoint(attempt: Attempt, patch: Partial<Pick<Attempt, "uploadSessionId" | "orderId">>) {
+  private async checkpoint(attempt: Attempt, patch: Partial<Pick<Attempt, "uploadSessionId" | "orderId" | "complimentary">>) {
     const db = await this.database();
     const tx = db.transaction(["attempts", "orders"], "readwrite");
     const saved = await tx.objectStore("attempts").get(attempt.key) as Attempt | undefined;
@@ -308,6 +311,13 @@ export class LiveStudioService implements StudioService {
     await tx.done;
     return next;
   }
+  async checkoutCode(review: CheckoutReview, code?: string) {
+    if (this.checkoutInFlight) throw new Error("Wait for checkout to finish before applying a code.");
+    await this.current(review, new AbortController().signal);
+    const api = await this.api();
+    return code === undefined ? api.getWebCheckoutCode(review.checkoutKey)
+      : api.claimWebCheckoutCode(review.checkoutKey, code);
+  }
   checkout(review: CheckoutReview, email: string, onProgress?: (progress: CheckoutProgress) => void) {
     if (this.checkoutInFlight) return this.checkoutInFlight;
     const controller = new AbortController(); this.checkoutAbort = controller;
@@ -315,7 +325,7 @@ export class LiveStudioService implements StudioService {
       .finally(() => { this.checkoutInFlight = undefined; this.checkoutAbort = undefined; });
   }
   private async runCheckout(review: CheckoutReview, email: string, signal: AbortSignal,
-    onProgress?: (progress: CheckoutProgress) => void, recoveredRefund = false): Promise<ReturnType<typeof result>> {
+    onProgress?: (progress: CheckoutProgress) => void, recoveredRefund = false): Promise<ReturnType<typeof result> | ComplimentaryCheckout> {
     const progress = (value: CheckoutProgress) => { if (!signal.aborted) onProgress?.(value); };
     progress({ stage: "preparing" });
     const draft = { ...await this.current(review, signal), email };
@@ -325,6 +335,19 @@ export class LiveStudioService implements StudioService {
       throw new Error("Add your own 4–6 selfies before paying.");
     }
     const api = await this.api();
+    // Authority is read from the server, including after a refresh or a lost Apply reply.
+    const promo = await api.getWebCheckoutCode?.(review.checkoutKey);
+    if (promo?.orderId) {
+      const completed = await api.startWebComplimentaryCheckout(review.checkoutKey, promo.orderId, email);
+      this.jobs = await api.listJobs();
+      await this.local.completeCheckout(review, email);
+      const db = await this.database();
+      const key = await db.get("orders", `${api.session.uid}/${promo.orderId}`);
+      const saved = key ? await db.get("attempts", key) as Attempt | undefined : undefined;
+      if (saved) await this.markSettled(saved, "fulfilled");
+      this.changed();
+      return completed;
+    }
     void api.recordWebObservation?.({kind:"checkout_email",eventId:crypto.randomUUID(),context:analyticsContext(),email}).catch(()=>{});
     const key = `${api.session.uid}/${reviewKey(review)}`;
     const db = await this.database();
@@ -348,6 +371,12 @@ export class LiveStudioService implements StudioService {
       await tx.done;
       if (!earlier) break;
       if (earlier.orderId) {
+        if (earlier.complimentary) {
+          const completed = await api.startWebComplimentaryCheckout(earlier.review.checkoutKey, earlier.orderId, earlier.email);
+          this.jobs = await api.listJobs();
+          await this.finishDraft(earlier); this.changed();
+          return completed;
+        }
         const closed = await api.cancelWebCheckout(earlier.orderId);
         if (["creating", "open"].includes(closed.state)) {
           throw new Error("We could not close your earlier checkout. Check its payment status before trying again.");
@@ -398,6 +427,14 @@ export class LiveStudioService implements StudioService {
     }
     await this.current(review, signal);
     progress({ stage: "opening" });
+    if (promo) {
+      attempt = await this.checkpoint(attempt, { complimentary: true });
+      const completed = await api.startWebComplimentaryCheckout(review.checkoutKey, attempt.orderId!, attempt.email);
+      this.jobs = await api.listJobs();
+      await this.finishDraft(attempt);
+      this.changed();
+      return completed;
+    }
     const checkout = await api.beginWebCheckout(attempt.orderId!, attempt.email, attempt.attribution);
     await this.current(review, signal);
     if (checkout.amountMinor !== 399 || checkout.currency !== "usd") {

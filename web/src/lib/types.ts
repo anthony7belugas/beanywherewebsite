@@ -78,7 +78,9 @@ export type Shoot = {
   generationLimitReached?: boolean;
   automaticWorkPending?: boolean;
 };
-export type CheckoutResult = Shoot | { kind: "payment"; orderId: string; url: string | null; jobId: string | null; state: string };
+export type ComplimentaryCheckout = { kind: "complimentary"; orderId: string; jobId: string };
+export type CheckoutCode = { state: "claimed" | "starting" | "fulfilled"; orderId: string | null; jobId: string | null };
+export type CheckoutResult = Shoot | ComplimentaryCheckout | { kind: "payment"; orderId: string; url: string | null; jobId: string | null; state: string };
 export type CheckoutProgress = { stage: "preparing" | "uploading" | "checking" | "opening"; fraction?: number };
 export type StudioState = {
   version: 1;
@@ -100,6 +102,7 @@ export interface StudioService {
   startDraft(packId: string, styling: Styling, styleId: string): Promise<void>;
   setStyling(styling: Styling): Promise<void>;
   checkout(review: CheckoutReview, email: string, onProgress?: (progress: CheckoutProgress) => void): Promise<CheckoutResult>;
+  checkoutCode?(review: CheckoutReview, code?: string): Promise<CheckoutCode | null>;
   payment?(orderId: string): Promise<Extract<CheckoutResult, { kind: "payment" }>>;
   editCheckout?(input: { orderId?: string; review?: CheckoutReview }): Promise<void>;
   photoBlob?(shootId: string, photo: Photo): Promise<Blob>;

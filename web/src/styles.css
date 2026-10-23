@@ -1279,6 +1279,12 @@ hr {
   color: var(--dim);
   margin: 18px 0 24px;
 }
+.checkout-code { margin: -4px 0 12px; }
+.checkout-code-toggle { font-size: 11px; min-height: 44px; }
+.checkout-code-row { display: flex; align-items: center; gap: 10px; }
+.checkout-code-row .text-input { min-width: 0; text-transform: uppercase; }
+.checkout-code-row .button { flex-shrink: 0; min-height: 44px; }
+.checkout-code .field-label { margin-top: 8px; }
 .terms-line {
   display: block;
   text-align: center;
