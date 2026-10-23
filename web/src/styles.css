@@ -1280,7 +1280,15 @@ hr {
   margin: 18px 0 24px;
 }
 .checkout-code { margin: -4px 0 12px; }
-.checkout-code-toggle { font-size: 11px; min-height: 44px; }
+.checkout-code-toggle {
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 600;
+  min-height: 44px;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+}
 .checkout-code-row { display: flex; align-items: center; gap: 10px; }
 .checkout-code-row .text-input { min-width: 0; text-transform: uppercase; }
 .checkout-code-row .button { flex-shrink: 0; min-height: 44px; }

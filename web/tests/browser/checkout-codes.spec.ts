@@ -77,7 +77,7 @@ for (const width of [390, 1440]) test(`code checkout claims on Apply, survives r
   await page.setViewportSize({ width, height:900 });
   await fixture(page);
   await expect(page.getByLabel('Checkout code', { exact:true })).toHaveCount(0);
-  await page.getByRole('button', { name:'Have a code?' }).click();
+  await page.getByRole('button', { name:'Have a promo code?' }).click();
   await page.getByLabel('Checkout code', { exact:true }).fill('BA-2345-6789-ABCD');
   await page.getByRole('button', { name:'Apply', exact:true }).click();
   await expect(page.getByRole('button', { name:'Start free photoshoot' })).toBeEnabled();
@@ -97,7 +97,7 @@ for (const width of [390, 1440]) test(`code checkout claims on Apply, survives r
 
 test('an invalid code leaves the paid checkout available and does not grant a free shoot', async ({page}) => {
   await fixture(page);
-  await page.getByRole('button', {name:'Have a code?'}).click();
+  await page.getByRole('button', {name:'Have a promo code?'}).click();
   await page.getByLabel('Checkout code',{exact:true}).fill('wrong');
   await page.getByRole('button',{name:'Apply',exact:true}).click();
   await expect(page.getByRole('alert')).toContainText('code is unavailable');
@@ -110,7 +110,7 @@ test('an invalid code leaves the paid checkout available and does not grant a fr
 
 test('refresh recovers a code whose successful Apply reply was lost', async ({page}) => {
   await fixture(page,true);
-  await page.getByRole('button',{name:'Have a code?'}).click();
+  await page.getByRole('button',{name:'Have a promo code?'}).click();
   await page.getByLabel('Checkout code',{exact:true}).fill('BA-2345-6789-ABCD');
   await page.getByRole('button',{name:'Apply',exact:true}).click();
   await expect(page.getByRole('alert')).toContainText('Connection interrupted');
@@ -123,7 +123,7 @@ test('a code entered after a lost paid reply closes that checkout and starts a f
   await fixture(page, false, 'lost-paid');
   await page.getByRole('button',{name:'Continue to pay $3.99'}).click();
   await expect(page.getByRole('alert')).toContainText('Paid checkout reached');
-  await page.getByRole('button',{name:'Have a code?'}).click();
+  await page.getByRole('button',{name:'Have a promo code?'}).click();
   await page.getByLabel('Checkout code',{exact:true}).fill('BA-2345-6789-ABCD');
   await page.getByRole('button',{name:'Apply',exact:true}).click();
   await page.getByRole('button',{name:'Start free photoshoot'}).click();
@@ -135,7 +135,7 @@ test('a code entered after a lost paid reply closes that checkout and starts a f
 
 test('correcting the email after a failed free start uses the corrected delivery address', async ({page}) => {
   await fixture(page, false, 'lost-free');
-  await page.getByRole('button',{name:'Have a code?'}).click();
+  await page.getByRole('button',{name:'Have a promo code?'}).click();
   await page.getByLabel('Checkout code',{exact:true}).fill('BA-2345-6789-ABCD');
   await page.getByRole('button',{name:'Apply',exact:true}).click();
   await page.getByRole('button',{name:'Start free photoshoot'}).click();

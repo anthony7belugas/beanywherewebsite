@@ -1308,7 +1308,7 @@ function Checkout({
           {liveMode && service.checkoutCode && <div className="checkout-code">
             {hasCode ? <p className="input-note" role="status">Code applied. Your photoshoot is complimentary.</p> : <>
               <button className="text-button checkout-code-toggle" type="button" disabled={busy || codeBusy}
-                aria-expanded={codeOpen} aria-controls="checkout-code-entry" onClick={() => setCodeOpen(!codeOpen)}>Have a code?</button>
+                aria-expanded={codeOpen} aria-controls="checkout-code-entry" onClick={() => setCodeOpen(!codeOpen)}>Have a promo code?</button>
               {codeOpen && <div id="checkout-code-entry">
                 <label className="field-label" htmlFor="checkout-code">Checkout code</label>
                 <div className="checkout-code-row">

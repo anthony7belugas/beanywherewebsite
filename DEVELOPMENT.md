@@ -161,3 +161,23 @@ Before claiming a code, checkout closes and verifies any earlier unresolved paid
 Regression coverage includes lost Stripe replies followed by Apply, cancellation outages and payment wins, corrected emails after an uncommitted free start, expired uploads, unknown claim authority, refresh and concurrent saved-code reads. Backend deployment must precede publication of these compiled Studio assets. No public codes are bundled in the website.
 
 Release validation: TypeScript and 309 unit tests, all 202 Chromium/WebKit browser checks, the live production build, and the backend’s full 274-check release gate passed. Isolated fixtures cover payment/generation/email behavior; a real purchase or complimentary generation is not performed by the release checks.
+
+
+### Checkout promo-code visibility
+
+The checkout entry now reads **Have a promo code?** and uses 16 px, semibold, cream-colored, underlined text. Its existing 44 px minimum tap height and expandable code field remain in place. This is a presentation change; code claiming and complimentary orders use the existing flow.
+
+To restore the original discreet presentation later:
+
+1. In `web/src/App.tsx`, change the toggle text from `Have a promo code?` back to `Have a code?`.
+2. In `web/src/styles.css`, replace the entire `.checkout-code-toggle` rule with its original rule:
+
+   ```css
+   .checkout-code-toggle { font-size: 11px; min-height: 44px; }
+   ```
+
+   The existing `.text-button` class supplies `color: var(--dim)` (`#b7a893`), no background and zero padding. The original control had no underline or additional font weight; hovering used `var(--text)` (`#f4ede3`). Keep the shared `.text-button` rule unchanged.
+3. Update the button name in `web/tests/browser/checkout-codes.spec.ts` back to `Have a code?`.
+4. From `web/`, run `npm run check`, `npm run test:browser -- tests/browser/checkout-codes.spec.ts`, `npm run build`, and `node scripts/sync-static.mjs`. Review mobile and desktop, commit the source and generated `studio/` assets, then publish through `main`.
+
+The exact pre-visibility-change source is in commit `06f7d779d4f484a2f7bd9aadf091c94d35006b10`. Restore only the label and selector above to preserve later checkout fixes. Promo codes remain single-use with either presentation.
