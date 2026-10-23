@@ -78,6 +78,89 @@ it("Apply claims the code without uploading, ordering or paying", async () => {
   expect(api.beginWebCheckout).not.toHaveBeenCalled(); expect(api.startWebComplimentaryCheckout).not.toHaveBeenCalled();
 });
 
+it("saved-code reads can overlap when checkout remounts", async () => {
+  api.getWebCheckoutCode.mockResolvedValue({ state: "claimed", orderId: null, jobId: null });
+  await expect(Promise.all([service.checkoutCode(draft), service.checkoutCode(draft)])).resolves.toHaveLength(2);
+});
+
+it("payment cannot begin while Apply is resolving the code", async () => {
+  let resolveClaim!: (value: unknown) => void;
+  api.claimWebCheckoutCode.mockImplementation(() => new Promise(resolve => { resolveClaim = resolve; }));
+  const applying = service.checkoutCode(draft, "BA-2345-6789-ABCD");
+  await vi.waitFor(() => expect(api.claimWebCheckoutCode).toHaveBeenCalledTimes(1));
+  await expect(service.checkout(draft, "friend@example.com")).rejects.toThrow("finish applying");
+  expect(api.beginWebCheckout).not.toHaveBeenCalled();
+  resolveClaim({ state: "claimed", orderId: null, jobId: null });
+  await applying;
+});
+
+it("Apply closes a lost Stripe checkout before claiming the code and uses a fresh order", async () => {
+  api.beginWebCheckout.mockRejectedValueOnce(new Error("reply lost"));
+  await expect(service.checkout(draft, "friend@example.com")).rejects.toThrow("reply lost");
+  await service.checkoutCode(draft, "BA-2345-6789-ABCD");
+  expect(api.cancelWebCheckout).toHaveBeenCalledExactlyOnceWith("order_1");
+  expect(api.cancelWebCheckout.mock.invocationCallOrder[0]).toBeLessThan(api.claimWebCheckoutCode.mock.invocationCallOrder[0]);
+  api.getWebCheckoutCode.mockResolvedValue({ state: "claimed", orderId: null, jobId: null });
+  api.createOrder.mockResolvedValue({ orderId: "order_2" });
+  api.startWebComplimentaryCheckout.mockResolvedValue({ kind: "complimentary", orderId: "order_2", jobId: "job_1" });
+  await expect(service.checkout(draft, "friend@example.com")).resolves.toMatchObject({ kind: "complimentary", orderId: "order_2" });
+  expect(api.startWebComplimentaryCheckout).toHaveBeenCalledExactlyOnceWith(draft.checkoutKey, "order_2", "friend@example.com");
+});
+
+it("Apply leaves the code unused when the previous payment cannot be confirmed closed", async () => {
+  api.beginWebCheckout.mockRejectedValueOnce(new Error("reply lost"));
+  await expect(service.checkout(draft, "friend@example.com")).rejects.toThrow();
+  api.cancelWebCheckout.mockRejectedValueOnce(new Error("payment status unavailable"));
+  await expect(service.checkoutCode(draft, "BA-2345-6789-ABCD")).rejects.toThrow("payment status unavailable");
+  expect(api.claimWebCheckoutCode).not.toHaveBeenCalled();
+});
+
+it("Apply preserves a payment that wins cancellation without spending the code", async () => {
+  await service.checkout(draft, "friend@example.com");
+  api.cancelWebCheckout.mockResolvedValue(checkout("fulfilled"));
+  await expect(service.checkoutCode(draft, "BA-2345-6789-ABCD")).rejects.toThrow("payment completed");
+  expect(api.claimWebCheckoutCode).not.toHaveBeenCalled();
+  expect((await local.read()).draft).toBeNull();
+});
+
+it("a free-start failure before server binding accepts the corrected email on retry", async () => {
+  api.getWebCheckoutCode.mockResolvedValue({ state: "claimed", orderId: null, jobId: null });
+  api.startWebComplimentaryCheckout.mockRejectedValueOnce(new Error("connection lost before commit"));
+  await expect(service.checkout(draft, "typo@example.com")).rejects.toThrow("connection lost");
+  await local.updateDraft(draft, { email: "correct@example.com" });
+  api.createOrder.mockResolvedValue({ orderId: "order_2" });
+  await service.checkout((await local.read()).draft!, "correct@example.com");
+  expect(api.startWebComplimentaryCheckout.mock.calls).toEqual([
+    [draft.checkoutKey, "order_1", "typo@example.com"], [draft.checkoutKey, "order_2", "correct@example.com"],
+  ]);
+  expect(api.cancelWebCheckout).toHaveBeenCalledExactlyOnceWith("order_1");
+});
+
+it("an expired, unbound complimentary order can be replaced using the same claimed code", async () => {
+  api.getWebCheckoutCode.mockResolvedValue({ state: "claimed", orderId: null, jobId: null });
+  api.startWebComplimentaryCheckout.mockRejectedValueOnce(new Error("Your selfies expired. Upload them again."));
+  await expect(service.checkout(draft, "friend@example.com")).rejects.toThrow("expired");
+  api.createOrder.mockResolvedValue({ orderId: "order_2" });
+  await service.checkout(draft, "friend@example.com");
+  expect(api.startWebComplimentaryCheckout).toHaveBeenLastCalledWith(draft.checkoutKey, "order_2", "friend@example.com");
+  expect(api.uploadReferences).toHaveBeenCalledTimes(2);
+});
+
+it("an unavailable earlier free-claim lookup cannot cancel a possibly funded shoot", async () => {
+  api.getWebCheckoutCode.mockResolvedValue({ state: "claimed", orderId: null, jobId: null });
+  api.startWebComplimentaryCheckout.mockRejectedValueOnce(new Error("reply lost"));
+  await expect(service.checkout(draft, "friend@example.com")).rejects.toThrow();
+  await local.startDraft("paris", "w", "chic");
+  const newer = (await local.read()).draft!;
+  api.getWebCheckoutCode.mockImplementation(async (key: string) => {
+    if (key === draft.checkoutKey) throw new Error("authority unavailable");
+    return null;
+  });
+  await expect(service.checkout(newer, "new@example.com")).rejects.toThrow("authority unavailable");
+  expect(api.cancelWebCheckout).not.toHaveBeenCalled();
+  expect(api.beginWebCheckout).not.toHaveBeenCalled();
+});
+
 it("a server-claimed code uses the existing upload/order flow and opens the real gallery without Stripe", async () => {
   api.getWebCheckoutCode.mockResolvedValue({ state: "claimed", orderId: null, jobId: null });
   const result = await service.checkout(draft, "friend@example.com");
@@ -120,7 +203,8 @@ it("an unfinished complimentary order is recovered before a newer checkout witho
   await local.updateDraft((await local.read()).draft!, { references: draft.references });
   await local.updateDraft((await local.read()).draft!, { consent: true });
   const newer = (await local.read()).draft!;
-  api.getWebCheckoutCode.mockResolvedValue(null);
+  api.getWebCheckoutCode.mockImplementation(async (key: string) => key === draft.checkoutKey
+    ? { state: "starting", orderId: "order_1", jobId: null } : null);
   await expect(service.checkout(newer, "new@example.com")).resolves.toMatchObject({ kind: "complimentary", jobId: "job_1" });
   expect(api.cancelWebCheckout).not.toHaveBeenCalled(); expect(api.beginWebCheckout).not.toHaveBeenCalled();
   expect((await local.read()).draft?.checkoutKey).toBe(newer.checkoutKey);

@@ -94,6 +94,7 @@ export class LiveStudioService implements StudioService {
   private watching?: Promise<void>;
   private checkoutInFlight?: Promise<ReturnType<typeof result> | ComplimentaryCheckout>;
   private checkoutAbort?: AbortController;
+  private applyingCode = false;
   private retries = new Map<string, Promise<void>>();
   private photoTransfers = new Map<string, Promise<Blob>>();
   private local: LocalStudioService;
@@ -312,13 +313,34 @@ export class LiveStudioService implements StudioService {
     return next;
   }
   async checkoutCode(review: CheckoutReview, code?: string) {
-    if (this.checkoutInFlight) throw new Error("Wait for checkout to finish before applying a code.");
-    await this.current(review, new AbortController().signal);
-    const api = await this.api();
-    return code === undefined ? api.getWebCheckoutCode(review.checkoutKey)
-      : api.claimWebCheckoutCode(review.checkoutKey, code);
+    if (this.checkoutInFlight || this.applyingCode) throw new Error("Wait for checkout to finish before applying a code.");
+    if (code === undefined) {
+      await this.current(review, new AbortController().signal);
+      return (await this.api()).getWebCheckoutCode(review.checkoutKey);
+    }
+    this.applyingCode = true;
+    try {
+      const signal = new AbortController().signal;
+      await this.current(review, signal);
+      const api = await this.api();
+      // A lost Stripe reply can leave a payable order behind. Close and fence it
+      // before spending the code; the free shoot will get a fresh order.
+      const attempts = await (await this.database()).getAll("attempts") as Attempt[];
+      for (const attempt of attempts) {
+        if (attempt.uid !== api.session.uid || attempt.settled || attempt.complimentary || !attempt.orderId) continue;
+        const closed = await api.cancelWebCheckout(attempt.orderId);
+        if (closed.state === "fulfilled") await this.finishDraft(attempt);
+        if (!["expired", "refunded"].includes(closed.state)) {
+          throw new Error("Your earlier payment completed or is still processing. Check My photos before applying a code.");
+        }
+        await this.releaseAttempt(attempt);
+      }
+      await this.current(review, signal);
+      return await api.claimWebCheckoutCode(review.checkoutKey, code);
+    } finally { this.applyingCode = false; }
   }
   checkout(review: CheckoutReview, email: string, onProgress?: (progress: CheckoutProgress) => void) {
+    if (this.applyingCode) return Promise.reject(new Error("Wait for your checkout code to finish applying."));
     if (this.checkoutInFlight) return this.checkoutInFlight;
     const controller = new AbortController(); this.checkoutAbort = controller;
     return this.checkoutInFlight = this.runCheckout(review, email.trim(), controller.signal, onProgress)
@@ -359,7 +381,7 @@ export class LiveStudioService implements StudioService {
       const tx = db.transaction("attempts", "readwrite");
       const attempts = await tx.store.getAll() as Attempt[];
       const earlier = attempts.find(value => value.uid === api.session.uid && !value.settled &&
-        (value.key !== key || value.email !== email));
+        (value.key !== key || value.email !== email || value.complimentary === true));
       if (!earlier) {
         attempt = attempts.find(value => value.key === key);
         if (!attempt) {
@@ -372,10 +394,18 @@ export class LiveStudioService implements StudioService {
       if (!earlier) break;
       if (earlier.orderId) {
         if (earlier.complimentary) {
-          const completed = await api.startWebComplimentaryCheckout(earlier.review.checkoutKey, earlier.orderId, earlier.email);
-          this.jobs = await api.listJobs();
-          await this.finishDraft(earlier); this.changed();
-          return completed;
+          // The local marker records intent, not a committed claim. Only the server
+          // can require resuming the old order/email after an interrupted start.
+          const authority = earlier.review.checkoutKey === review.checkoutKey ? promo
+            : await api.getWebCheckoutCode(earlier.review.checkoutKey);
+          if (authority?.orderId) {
+            const completed = await api.startWebComplimentaryCheckout(earlier.review.checkoutKey, authority.orderId, earlier.email);
+            this.jobs = await api.listJobs();
+            await this.finishDraft(earlier); this.changed();
+            return completed;
+          }
+          // An unbound start may still arrive late. The existing cancellation
+          // transaction fences that order before we upload a fresh reviewed draft.
         }
         const closed = await api.cancelWebCheckout(earlier.orderId);
         if (["creating", "open"].includes(closed.state)) {

@@ -17,6 +17,7 @@ async function fixture(page: Page, checkout = false) {
       listJobs: async () => ${checkout ? '[]' : '[job]'},
       listWebGalleries: () => recovery,
       watchJobs: async () => () => {}, recordEvent: async () => {},
+      getWebCheckoutCode: async () => null,
       checkPackReadiness: async () => ({ok:true,productId:'pack.paris'}), recordConsent: async () => {},
       uploadReferences: async (_files,_id,_glasses,progress) => {
         window.uploads = (window.uploads || 0) + 1;

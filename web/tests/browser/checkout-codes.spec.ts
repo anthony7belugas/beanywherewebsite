@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 
-async function fixture(page: Page, loseApplyReply = false) {
+async function fixture(page: Page, loseApplyReply = false, scenario = 'normal') {
   // Real UI + real persistence/checkout service; only the Firebase boundary is replaced.
   await page.route('https://**', route => route.abort());
   await page.route('**/src/services/index.ts', route => route.fulfill({ contentType: 'application/javascript', body: `
@@ -13,7 +13,7 @@ async function fixture(page: Page, loseApplyReply = false) {
     const job = { id:'promo-job', uid, orderId:'promo-order', packId:'paris', styling:'w', styleId:'chic',
       clientVisible:true, status:'developing', generationState:'queued', reshootsLeft:3,
       slots:[], readableOutputPaths:[], createdAt:{seconds:1792400000} };
-    window.paidCalls = 0; window.startCalls = 0; window.uploadCalls = 0;
+    window.paidCalls = 0; window.startCalls = 0; window.uploadCalls = 0; window.cancelCalls = 0;
     const api = {
       session:{uid,webAppId:'qa',capabilityVersion:1},
       listJobs:async()=>claim()?.state==='fulfilled'?[job]:[], watchJobs:async()=>()=>{},
@@ -30,14 +30,28 @@ async function fixture(page: Page, loseApplyReply = false) {
       },
       checkPackReadiness:async()=>({ok:true,productId:'photo.pack.standard'}), recordConsent:async()=>{},
       uploadReferences:async()=>{window.uploadCalls++;return {sessionId:'promo-upload'};},
-      createOrder:async()=>({orderId:'promo-order'}),
-      startWebComplimentaryCheckout:async()=>{
+      createOrder:async()=>{
+        const count=Number(sessionStorage.getItem('qa-orders')||0)+1;
+        sessionStorage.setItem('qa-orders',String(count));
+        return {orderId:count===1?'promo-order':'promo-order-'+count};
+      },
+      cancelWebCheckout:async(orderId)=>{
+        window.cancelCalls++;
+        sessionStorage.setItem('qa-cancelled-order',orderId);
+        return {orderId,state:'expired',amountMinor:399,currency:'usd'};
+      },
+      startWebComplimentaryCheckout:async(key,orderId,email)=>{
         window.startCalls++;
         if(!claim())throw Error('Code required');
+        if(sessionStorage.getItem('qa-paid-order')===orderId)throw Error('Stripe order cannot use a code');
+        if('${scenario}'==='lost-free' && !sessionStorage.getItem('qa-free-failed')) {
+          sessionStorage.setItem('qa-free-failed','yes'); throw Error('Connection interrupted before starting. Try again.');
+        }
+        window.deliveryEmail=email; window.freeOrderId=orderId;
         sessionStorage.setItem('qa-code-claim',JSON.stringify({state:'fulfilled',orderId:'promo-order',jobId:'promo-job'}));
         return {kind:'complimentary',orderId:'promo-order',jobId:'promo-job'};
       },
-      beginWebCheckout:async()=>{window.paidCalls++;throw Error('Paid checkout reached');},
+      beginWebCheckout:async(orderId)=>{window.paidCalls++;sessionStorage.setItem('qa-paid-order',orderId);throw Error('Paid checkout reached');},
     };
     const local = new LocalStudioService(namespace+'-drafts');
     const seed = (async()=>{
@@ -102,5 +116,33 @@ test('refresh recovers a code whose successful Apply reply was lost', async ({pa
   await expect(page.getByRole('alert')).toContainText('Connection interrupted');
   await page.reload();
   await expect(page.getByRole('button',{name:'Start free photoshoot'})).toBeEnabled();
+  expect(await page.evaluate(() => Reflect.get(window,'paidCalls'))).toBe(0);
+});
+
+test('a code entered after a lost paid reply closes that checkout and starts a fresh free order', async ({page}) => {
+  await fixture(page, false, 'lost-paid');
+  await page.getByRole('button',{name:'Continue to pay $3.99'}).click();
+  await expect(page.getByRole('alert')).toContainText('Paid checkout reached');
+  await page.getByRole('button',{name:'Have a code?'}).click();
+  await page.getByLabel('Checkout code',{exact:true}).fill('BA-2345-6789-ABCD');
+  await page.getByRole('button',{name:'Apply',exact:true}).click();
+  await page.getByRole('button',{name:'Start free photoshoot'}).click();
+  await expect(page).toHaveURL(/#\/gallery\/promo-job$/);
+  expect(await page.evaluate(() => Reflect.get(window,'cancelCalls'))).toBe(1);
+  expect(await page.evaluate(() => Reflect.get(window,'freeOrderId'))).toBe('promo-order-2');
+  expect(await page.evaluate(() => Reflect.get(window,'paidCalls'))).toBe(1);
+});
+
+test('correcting the email after a failed free start uses the corrected delivery address', async ({page}) => {
+  await fixture(page, false, 'lost-free');
+  await page.getByRole('button',{name:'Have a code?'}).click();
+  await page.getByLabel('Checkout code',{exact:true}).fill('BA-2345-6789-ABCD');
+  await page.getByRole('button',{name:'Apply',exact:true}).click();
+  await page.getByRole('button',{name:'Start free photoshoot'}).click();
+  await expect(page.getByRole('alert')).toContainText('Connection interrupted before starting');
+  await page.locator('input[type="email"]').fill('correct@example.com');
+  await page.getByRole('button',{name:'Start free photoshoot'}).click();
+  await expect(page).toHaveURL(/#\/gallery\/promo-job$/);
+  expect(await page.evaluate(() => Reflect.get(window,'deliveryEmail'))).toBe('correct@example.com');
   expect(await page.evaluate(() => Reflect.get(window,'paidCalls'))).toBe(0);
 });

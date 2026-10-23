@@ -151,3 +151,13 @@ Reproduced two simultaneous requests for the same photo downloading it twice. Th
 Reproduced a delayed screen read replacing a newer email with an older value, and a delayed error replacing a successfully loaded screen with a fatal connection message. Notification reads and gallery-refresh reads now share a monotonic request version; only the latest read may update the screen. A gallery refresh whose route has been left does not start another screen read. New errors are still surfaced and subsequent success still recovers the interface.
 
 Validation: TypeScript and all 295 unit tests, all 190 Chromium/WebKit browser checks, and the production build. Regression tests first failed against the earlier implementation, then verified one shared transfer, fresh access on later requests, retry after failure, separate photo versions/email contexts, and out-of-order successes/failures across both refresh sources. Backend code and hosting configuration are unchanged; no additional fixed cost, warm-up traffic, live payment, photo generation or customer email is introduced.
+
+### One-time friend checkout codes
+
+The existing checkout now has a discreet **Have a code?** control. Apply claims a random, single-use code for the current browser/draft; Start free photoshoot uses the real upload, order, gallery, reshoot and email paths with server-authorized complimentary funding. See `BeThere/docs/web-checkout-codes.md` for the private operator utility and release dependencies.
+
+Before claiming a code, checkout closes and verifies any earlier unresolved paid order, preserving a payment that wins cancellation. Free-start retries read the server claim before resuming an old order: an unbound interrupted start can be replaced with the currently reviewed email/selfies, while a committed start keeps its original authority. Only code application blocks a simultaneous payment; saved-code reads may overlap when the screen remounts.
+
+Regression coverage includes lost Stripe replies followed by Apply, cancellation outages and payment wins, corrected emails after an uncommitted free start, expired uploads, unknown claim authority, refresh and concurrent saved-code reads. Backend deployment must precede publication of these compiled Studio assets. No public codes are bundled in the website.
+
+Release validation: TypeScript and 309 unit tests, all 202 Chromium/WebKit browser checks, the live production build, and the backend’s full 274-check release gate passed. Isolated fixtures cover payment/generation/email behavior; a real purchase or complimentary generation is not performed by the release checks.
